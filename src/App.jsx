@@ -39,6 +39,48 @@ const CATS = [
 
 const DEFAULT_PCT = { necessidades: 60, qualidade: 30, investimento: 10 };
 
+// Pre-defined expense suggestions per category
+const SUGESTOES = {
+  necessidades: [
+    { nome: "Renda / Casa",         emoji: "🏠" },
+    { nome: "Mercado / Alimentação",emoji: "🛒" },
+    { nome: "Água",                 emoji: "💧" },
+    { nome: "Electricidade",        emoji: "💡" },
+    { nome: "Combustível",          emoji: "⛽" },
+    { nome: "Transporte / Táxi",    emoji: "🚕" },
+    { nome: "Internet",             emoji: "📶" },
+    { nome: "Telemóvel",            emoji: "📱" },
+    { nome: "Medicamentos",         emoji: "💊" },
+    { nome: "Escola / Propinas",    emoji: "📚" },
+    { nome: "Condomínio",           emoji: "🏢" },
+    { nome: "Gás",                  emoji: "🔥" },
+  ],
+  qualidade: [
+    { nome: "Restaurante",          emoji: "🍽️" },
+    { nome: "Café",                 emoji: "☕" },
+    { nome: "Roupas",               emoji: "👗" },
+    { nome: "Ginásio",              emoji: "💪" },
+    { nome: "Lazer / Saídas",       emoji: "🎭" },
+    { nome: "Netflix / Streaming",  emoji: "🎬" },
+    { nome: "Cabeleireiro / Barbearia", emoji: "✂️" },
+    { nome: "Farmácia / Saúde",     emoji: "🏥" },
+    { nome: "Spa / Bem-estar",      emoji: "🧘" },
+    { nome: "Viagem",               emoji: "✈️" },
+    { nome: "Presentes",            emoji: "🎁" },
+    { nome: "Livros / Formação",    emoji: "📖" },
+  ],
+  investimento: [
+    { nome: "Poupança bancária",    emoji: "🏦" },
+    { nome: "Negócio próprio",      emoji: "💼" },
+    { nome: "BODIVA / Acções",      emoji: "📈" },
+    { nome: "Imobiliário",          emoji: "🏗️" },
+    { nome: "Dólares / Divisas",    emoji: "💵" },
+    { nome: "Fundo de emergência",  emoji: "🛡️" },
+    { nome: "Formação / Cursos",    emoji: "🎓" },
+    { nome: "Ouro / Metais",        emoji: "🥇" },
+  ],
+};
+
 // ── AI ────────────────────────────────────────────────────────────────────────
 async function askAI(messages, userData) {
   const system = `És um assistente financeiro chamado "Minhas Finanças".
@@ -73,35 +115,34 @@ REGRAS:
 function SetupScreen({ onComplete }) {
   const [step, setStep] = useState(0);
   const [salario, setSalario] = useState("");
+  const [salarioDisplay, setSalarioDisplay] = useState("");
   const [dataRecebimento, setDataRecebimento] = useState(todayStr());
   const [proximoPagamento, setProximoPagamento] = useState("");
   const [pct, setPct] = useState({ ...DEFAULT_PCT });
 
-  // Auto-balance percentages: when one changes, spread remainder to others proportionally
-  const handlePct = (id, raw) => {
-    const val = Math.min(100, Math.max(0, parseInt(raw) || 0));
-    const others = CATS.filter(c => c.id !== id);
-    const used = val;
-    const remaining = 100 - used;
-    const otherSum = others.reduce((s, c) => s + pct[c.id], 0);
-    const newPct = { ...pct, [id]: val };
-    if (otherSum === 0) {
-      const share = Math.floor(remaining / others.length);
-      others.forEach((c, i) => {
-        newPct[c.id] = i === others.length - 1 ? remaining - share * (others.length - 1) : share;
-      });
-    } else {
-      others.forEach(c => {
-        newPct[c.id] = Math.round((pct[c.id] / otherSum) * remaining);
-      });
-      // fix rounding
-      const total = Object.values(newPct).reduce((a, b) => a + b, 0);
-      if (total !== 100) newPct[others[others.length - 1].id] += 100 - total;
-    }
-    setPct(newPct);
+  // Format number while typing: "1000000" → "1.000.000"
+  const handleSalarioChange = (raw) => {
+    const digits = raw.replace(/\D/g, "");
+    setSalario(digits);
+    if (digits === "") { setSalarioDisplay(""); return; }
+    const num = parseInt(digits, 10);
+    const formatted = String(num).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+    setSalarioDisplay(formatted);
   };
 
-  const totalPct = Object.values(pct).reduce((a, b) => a + b, 0);
+  // Independent fields. Allow empty while typing — validate on total only.
+  const handlePct = (id, raw) => {
+    // Allow empty string while user is clearing to retype
+    if (raw === "" || raw === "-") {
+      setPct(prev => ({ ...prev, [id]: "" }));
+      return;
+    }
+    const val = Math.min(100, Math.max(0, parseInt(raw) || 0));
+    setPct(prev => ({ ...prev, [id]: val }));
+  };
+
+
+  const totalPct = Object.values(pct).reduce((a, b) => a + (parseInt(b) || 0), 0);
   const sal = parseFloat(salario) || 0;
 
   const steps = [
@@ -116,16 +157,17 @@ function SetupScreen({ onComplete }) {
             <span style={S.currency}>Kz</span>
             <input
               autoFocus
-              type="number"
-              value={salario}
-              onChange={e => setSalario(e.target.value)}
+              type="text"
+              inputMode="numeric"
+              value={salarioDisplay}
+              onChange={e => handleSalarioChange(e.target.value)}
               placeholder="0"
               style={S.bigInput}
             />
           </div>
           {sal > 0 && (
-            <div style={{ textAlign: "center", margin: "8px 0 4px", fontSize: "0.82em", color: "#555", letterSpacing: "0.04em" }}>
-              {fmtKz(sal)}
+            <div style={{ textAlign: "center", margin: "8px 0 4px", fontSize: "0.78em", color: "#666", letterSpacing: "0.04em" }}>
+              {fmtKz(sal)} — valor confirmado
             </div>
           )}
           {sal > 0 && (
@@ -162,9 +204,9 @@ function SetupScreen({ onComplete }) {
                   <input
                     type="number"
                     min="0" max="100"
-                    value={pct[c.id]}
+                    value={pct[c.id] === "" ? "" : pct[c.id]}
                     onChange={e => handlePct(c.id, e.target.value)}
-                    style={{ width: 52, background: "#111", border: `1px solid ${c.color}60`, borderRadius: 8, padding: "6px 8px", color: c.color, fontWeight: 800, fontSize: "1em", fontFamily: "inherit", outline: "none", textAlign: "center" }}
+                    style={{ width: 58, background: "#111", border: `2px solid ${c.color}`, borderRadius: 8, padding: "6px 8px", color: c.color, fontWeight: 800, fontSize: "1.1em", fontFamily: "inherit", outline: "none", textAlign: "center" }}
                   />
                   <span style={{ color: "#555", fontSize: "0.9em" }}>%</span>
                 </div>
@@ -178,13 +220,31 @@ function SetupScreen({ onComplete }) {
             </div>
           ))}
           <div style={{
-            textAlign: "center", fontSize: "0.82em", fontWeight: 700,
-            color: totalPct === 100 ? "#22C55E" : "#EF4444",
-            padding: "8px", borderRadius: 8,
-            background: totalPct === 100 ? "#22C55E10" : "#EF444410",
+            textAlign: "center", fontSize: "0.9em", fontWeight: 800,
+            color: totalPct === 100 ? "#22C55E" : totalPct > 100 ? "#EF4444" : "#F59E0B",
+            padding: "12px", borderRadius: 12,
+            background: totalPct === 100 ? "#22C55E15" : totalPct > 100 ? "#EF444415" : "#F59E0B15",
+            border: `2px solid ${totalPct === 100 ? "#22C55E40" : totalPct > 100 ? "#EF444440" : "#F59E0B40"}`,
+            fontSize: "1em",
           }}>
-            {totalPct === 100 ? "✓ Total: 100% — perfeito!" : `Total: ${totalPct}% — faltam ${100 - totalPct}%`}
+            {totalPct === 100
+              ? "✅ Total: 100% — perfeito!"
+              : totalPct > 100
+                ? `🔴 Total: ${totalPct}% — excedeste em ${totalPct - 100}%`
+                : `🟡 Total: ${totalPct}% — ainda faltam ${100 - totalPct}%`}
           </div>
+          {totalPct !== 100 && (
+            <button
+              onClick={() => {
+                // Auto-fix: set last category to make up the difference
+                const lastCat = CATS[CATS.length - 1];
+                const othersSum = CATS.slice(0,-1).reduce((s,c) => s + pct[c.id], 0);
+                setPct(prev => ({ ...prev, [lastCat.id]: Math.max(0, 100 - othersSum) }));
+              }}
+              style={{ width: "100%", background: "#1A1A1A", border: "1px dashed #333", borderRadius: 10, padding: "8px", color: "#666", fontSize: "0.78em", cursor: "pointer", fontFamily: "inherit" }}>
+              Ajustar automaticamente para 100%
+            </button>
+          )}
         </div>
       ),
     },
@@ -359,38 +419,44 @@ function ValidationScreen({ onDone }) {
 }
 
 // ── DASHBOARD ─────────────────────────────────────────────────────────────────
-function DashboardScreen({ state, onAddExpense, onOpenChat, onSettings }) {
-  const { salario, dataRecebimento, proximoPagamento, despesas, pct } = state;
+function DashboardScreen({ state, onAddExpense, onOpenChat, onOpenCharts, onOpenGoals }) {
+  const { salario, dataRecebimento, proximoPagamento, despesas, pct, objectivos = [] } = state;
 
   // Period: dataRecebimento → proximoPagamento
-  const diasRestantes = daysUntil(proximoPagamento);           // today → next payment
-  const diasPassados = daysSince(dataRecebimento);              // last payment → today
-  const diasPeriodo = diasRestantes + diasPassados;             // full period length
+  const diasRestantes = daysUntil(proximoPagamento);
+  const diasPassados = daysSince(dataRecebimento);
+  const diasPeriodo = diasRestantes + diasPassados;
 
+  // Despesas por categoria
   const gastosPorCat = {};
   CATS.forEach(c => {
     gastosPorCat[c.id] = despesas.filter(d => d.categoria === c.id).reduce((s, d) => s + d.valor, 0);
   });
   const totalGasto = Object.values(gastosPorCat).reduce((a, b) => a + b, 0);
 
-  // Daily rate based on FULL period (e.g. 100.000 Kz / 30 days = 3.333 Kz/day)
-  const taxaDiaria = diasPeriodo > 0 ? salario / diasPeriodo : salario;
+  // Objectivos: poupança mensal reservada por categoria
+  const reservadoPorCat = {};
+  CATS.forEach(c => {
+    reservadoPorCat[c.id] = objectivos
+      .filter(o => o.categoria === c.id)
+      .reduce((s, o) => s + (o.poupancaMensal || 0), 0);
+  });
+  const totalReservado = Object.values(reservadoPorCat).reduce((a, b) => a + b, 0);
 
-  // Budget allocated for remaining days
+  // Daily rate based on FULL period
+  const taxaDiaria = diasPeriodo > 0 ? salario / diasPeriodo : salario;
   const orcamentoRestante = taxaDiaria * diasRestantes;
 
-  // Adjusted daily = (budget for remaining days - what was actually spent) / remaining days
-  // Spend less → daily goes UP. Spend more → daily goes DOWN. Auto-redistributes.
-  const saldoAjustado = orcamentoRestante - totalGasto;
+  // Saldo real = salary - expenses - goals reserved
+  const totalComprometido = totalGasto + totalReservado;
+  const saldoAjustado = orcamentoRestante - totalComprometido;
   const gastoDiario = diasRestantes > 0 ? saldoAjustado / diasRestantes : saldoAjustado;
-
-  // Saldo total disponível = full salary minus everything spent
-  const saldo = salario - totalGasto;
+  const saldo = salario - totalComprometido;
 
   // Context: are we on track?
   const gastoEsperadoAteHoje = taxaDiaria * diasPassados;
-  const acimaDoEsperado = totalGasto > gastoEsperadoAteHoje;
-  const diferencaVsEsperado = Math.abs(totalGasto - gastoEsperadoAteHoje);
+  const acimaDoEsperado = totalComprometido > gastoEsperadoAteHoje;
+  const diferencaVsEsperado = Math.abs(totalComprometido - gastoEsperadoAteHoje);
 
   // Hero tone
   const heroPositive = gastoDiario >= taxaDiaria;
@@ -403,7 +469,7 @@ function DashboardScreen({ state, onAddExpense, onOpenChat, onSettings }) {
           <div style={S.logo}>💰 Minhas Finanças</div>
           <div style={S.headerSub}>kwanza a kwanza, o futuro constrói-se</div>
         </div>
-        <button onClick={onSettings} style={S.iconBtn}>⚙️</button>
+
       </div>
 
       {/* Hero */}
@@ -443,12 +509,24 @@ function DashboardScreen({ state, onAddExpense, onOpenChat, onSettings }) {
         <div style={S.heroDivider} />
         <div style={S.heroRow}>
           <div>
-            <div style={S.heroSmallLabel}>Saldo disponível</div>
-            <div style={{ ...S.heroSmall, color: saldo >= 0 ? "#C8A040" : "#EF4444" }}>{fmtKz(saldo)}</div>
+            <div style={S.heroSmallLabel}>Sobra este mês</div>
+            <div style={{ ...S.heroSmall, color: saldo >= 0 ? "#C8A040" : "#EF4444", fontSize: "1.1em", fontWeight: 800 }}>{fmtKz(saldo)}</div>
+            {totalReservado > 0 && <div style={{ fontSize: "0.68em", color: "#F59E0B80", marginTop: 2 }}>incl. {fmtKz(totalReservado)} em obj.</div>}
           </div>
           <div style={{ textAlign: "right" }}>
-            <div style={S.heroSmallLabel}>Rendimento</div>
-            <div style={S.heroSmall}>{fmtKz(salario)}</div>
+            <div style={S.heroSmallLabel}>Total gasto</div>
+            <div style={{ ...S.heroSmall, color: "#888" }}>{fmtKz(totalGasto)}</div>
+          </div>
+        </div>
+        {/* Progress bar: spending vs salary */}
+        <div style={{ marginTop: 12 }}>
+          <div style={{ height: 4, background: "rgba(255,255,255,0.05)", borderRadius: 2, overflow: "hidden" }}>
+            <div style={{ width: `${Math.min(100, salario > 0 ? (totalGasto / salario) * 100 : 0)}%`, height: "100%", background: saldo >= 0 ? "#F59E0B" : "#EF4444", borderRadius: 2, transition: "width 0.5s" }} />
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, fontSize: "0.68em", color: "#4A3A20" }}>
+            <span>0</span>
+            <span style={{ color: "#4A3A20" }}>{salario > 0 ? ((totalGasto/salario)*100).toFixed(1) : 0}% do rendimento usado</span>
+            <span>{fmtKz(salario)}</span>
           </div>
         </div>
       </div>
@@ -458,10 +536,12 @@ function DashboardScreen({ state, onAddExpense, onOpenChat, onSettings }) {
       <div style={S.categoryList}>
         {CATS.map(c => {
           const gasto = gastosPorCat[c.id];
+          const reservado = reservadoPorCat[c.id] || 0;
           const orc = salario * pct[c.id] / 100;
-          const pctUsed = orc > 0 ? Math.min(100, (gasto / orc) * 100) : 0;
-          const over = gasto > orc;
-          const restante = orc - gasto;
+          const totalUsado = gasto + reservado;
+          const pctUsed = orc > 0 ? Math.min(100, (totalUsado / orc) * 100) : 0;
+          const over = totalUsado > orc;
+          const restante = orc - totalUsado;
           return (
             <div key={c.id} style={S.categoryCard}>
               <div style={S.catHeader}>
@@ -473,6 +553,7 @@ function DashboardScreen({ state, onAddExpense, onOpenChat, onSettings }) {
                 <div style={{ textAlign: "right" }}>
                   <div style={{ color: over ? "#EF4444" : c.color, fontWeight: 700, fontSize: "0.9em" }}>
                     {fmtKz(gasto)}
+                    {reservado > 0 && <span style={{ fontSize: "0.75em", color: "#F59E0B", display: "block" }}>+ {fmtKz(reservado)} obj.</span>}
                   </div>
                   <div style={S.catLimit}>/ {fmtKz(orc)} ({pct[c.id]}%)</div>
                 </div>
@@ -481,7 +562,7 @@ function DashboardScreen({ state, onAddExpense, onOpenChat, onSettings }) {
                 <div style={{ ...S.barFill, width: `${pctUsed}%`, background: over ? "#EF4444" : c.color }} />
               </div>
               {over
-                ? <div style={S.overAlert}>⚠️ Excedeste em {fmtKz(gasto - orc)}</div>
+                ? <div style={S.overAlert}>⚠️ Excedeste em {fmtKz(totalUsado - orc)}</div>
                 : <div style={{ fontSize: "0.72em", color: "#22863A", marginTop: 6, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
                     <span>✓</span>
                     <span>Ainda tens <strong style={{ color: c.color }}>{fmtKz(restante)}</strong> disponíveis nesta categoria</span>
@@ -514,9 +595,9 @@ function DashboardScreen({ state, onAddExpense, onOpenChat, onSettings }) {
         </>
       )}
 
-      <div style={S.actions}>
+      {/* Add expense FAB */}
+      <div style={{ padding: "0 16px 100px" }}>
         <button onClick={onAddExpense} style={S.addBtn}>+ Registar despesa</button>
-        <button onClick={onOpenChat} style={S.chatBtn}>💬 IA</button>
       </div>
     </div>
   );
@@ -529,24 +610,17 @@ function SettingsScreen({ state, onSave, onBack }) {
   const [proximoPagamento, setProximoPagamento] = useState(state.proximoPagamento);
   const [pct, setPct] = useState({ ...state.pct });
 
+  // Simple independent control — allow clearing to retype
   const handlePct = (id, raw) => {
-    const val = Math.min(100, Math.max(0, parseInt(raw) || 0));
-    const others = CATS.filter(c => c.id !== id);
-    const remaining = 100 - val;
-    const otherSum = others.reduce((s, c) => s + pct[c.id], 0);
-    const newPct = { ...pct, [id]: val };
-    if (otherSum === 0) {
-      const share = Math.floor(remaining / others.length);
-      others.forEach((c, i) => { newPct[c.id] = i === others.length - 1 ? remaining - share * (others.length - 1) : share; });
-    } else {
-      others.forEach(c => { newPct[c.id] = Math.round((pct[c.id] / otherSum) * remaining); });
-      const total = Object.values(newPct).reduce((a, b) => a + b, 0);
-      if (total !== 100) newPct[others[others.length - 1].id] += 100 - total;
+    if (raw === "" || raw === "-") {
+      setPct(prev => ({ ...prev, [id]: "" }));
+      return;
     }
-    setPct(newPct);
+    const val = Math.min(100, Math.max(0, parseInt(raw) || 0));
+    setPct(prev => ({ ...prev, [id]: val }));
   };
 
-  const totalPct = Object.values(pct).reduce((a, b) => a + b, 0);
+  const totalPct = Object.values(pct).reduce((a, b) => a + (parseInt(b) || 0), 0);
   const sal = parseFloat(salario) || 0;
   const valid = sal > 0 && totalPct === 100 && dataRecebimento && proximoPagamento;
 
@@ -613,12 +687,37 @@ function SettingsScreen({ state, onSave, onBack }) {
   );
 }
 
-// ── ADD EXPENSE ───────────────────────────────────────────────────────────────
-function AddExpenseScreen({ onSave, onBack }) {
+// ── ADD EXPENSE (with smart suggestions + custom library) ─────────────────────
+function AddExpenseScreen({ onSave, onBack, despesasAnteriores, saldoRestante }) {
   const [descricao, setDescricao] = useState("");
   const [valor, setValor] = useState("");
+  const [valorDisplay, setValorDisplay] = useState("");
   const [categoria, setCategoria] = useState("necessidades");
   const [data, setData] = useState(todayStr());
+  const [showSugg, setShowSugg] = useState(true);
+
+  // Build suggestion list: pre-defined + user's own past descriptions (deduplicated)
+  const pastNames = [...new Set(despesasAnteriores.map(d => d.descricao))];
+  const catSugg = SUGESTOES[categoria] || [];
+  const predefinedNames = catSugg.map(s => s.nome);
+  // User's past expenses in this category not already in predefined
+  const userCustom = pastNames
+    .filter(n => despesasAnteriores.some(d => d.categoria === categoria && d.descricao === n))
+    .filter(n => !predefinedNames.includes(n))
+    .map(n => ({ nome: n, emoji: "📝" }));
+  const allSugg = [...catSugg, ...userCustom];
+  const filtered = descricao.trim()
+    ? allSugg.filter(s => s.nome.toLowerCase().includes(descricao.toLowerCase()))
+    : allSugg;
+
+  const cat = CATS.find(c => c.id === categoria);
+  const v = parseFloat(valor) || 0;
+  const sobraAposEsta = saldoRestante - v;
+
+  const pickSugg = (s) => {
+    setDescricao(s.nome);
+    setShowSugg(false);
+  };
 
   return (
     <div style={S.screen}>
@@ -628,44 +727,437 @@ function AddExpenseScreen({ onSave, onBack }) {
         <div style={{ width: 60 }} />
       </div>
       <div style={{ padding: "0 16px" }}>
-        <div style={S.field}>
-          <label style={S.label}>DESCRIÇÃO</label>
-          <input value={descricao} onChange={e => setDescricao(e.target.value)}
-            placeholder="ex: Mercado, Combustível, Netflix..." style={S.input} />
-        </div>
-        <div style={S.field}>
-          <label style={S.label}>VALOR (Kz)</label>
-          <div style={{ position: "relative" }}>
-            <span style={S.inputPrefix}>Kz</span>
-            <input type="number" value={valor} onChange={e => setValor(e.target.value)}
-              placeholder="0" style={{ ...S.input, paddingLeft: 44 }} />
-          </div>
-        </div>
+
+        {/* Category selector FIRST — so suggestions are contextual */}
         <div style={S.field}>
           <label style={S.label}>CATEGORIA</label>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8 }}>
             {CATS.map(c => (
-              <button key={c.id} onClick={() => setCategoria(c.id)}
-                style={{ display: "flex", alignItems: "center", gap: 12, background: "#0F0F0F", border: `1px solid ${categoria === c.id ? c.color : "#1E1E1E"}`, borderRadius: 12, padding: "13px 16px", cursor: "pointer", fontFamily: "inherit", transition: "all 0.2s" }}>
-                <span style={{ fontSize: "1.3em" }}>{c.emoji}</span>
-                <div style={{ textAlign: "left" }}>
-                  <div style={{ fontWeight: 700, fontSize: "0.88em", color: categoria === c.id ? c.color : "#DDD" }}>{c.label}</div>
-                  <div style={{ fontSize: "0.72em", color: "#555" }}>{c.desc}</div>
-                </div>
+              <button key={c.id} onClick={() => { setCategoria(c.id); setShowSugg(true); }}
+                style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+                  background: categoria === c.id ? `${c.color}18` : "#0F0F0F",
+                  border: `1px solid ${categoria === c.id ? c.color : "#1E1E1E"}`,
+                  borderRadius: 12, padding: "10px 6px", cursor: "pointer", fontFamily: "inherit", transition: "all 0.2s" }}>
+                <span style={{ fontSize: "1.4em" }}>{c.emoji}</span>
+                <span style={{ fontSize: "0.68em", fontWeight: 700, color: categoria === c.id ? c.color : "#666", textAlign: "center", lineHeight: 1.2 }}>{c.label}</span>
               </button>
             ))}
           </div>
         </div>
+
+        {/* Description with suggestions */}
+        <div style={S.field}>
+          <label style={S.label}>O QUE COMPRASTE?</label>
+          <input value={descricao}
+            onChange={e => { setDescricao(e.target.value); setShowSugg(true); }}
+            onFocus={() => setShowSugg(true)}
+            placeholder="Escreve ou escolhe abaixo..."
+            style={S.input} />
+
+          {/* Suggestions grid */}
+          {showSugg && filtered.length > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontSize: "0.68em", color: "#444", fontWeight: 700, letterSpacing: "0.08em", marginBottom: 6 }}>
+                {descricao ? "SUGESTÕES" : `COMUNS EM ${cat?.label?.toUpperCase()}`}
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {filtered.map((s, i) => (
+                  <button key={i} onClick={() => pickSugg(s)}
+                    style={{ display: "flex", alignItems: "center", gap: 5,
+                      background: descricao === s.nome ? `${cat?.color}20` : "#111",
+                      border: `1px solid ${descricao === s.nome ? cat?.color : "#222"}`,
+                      borderRadius: 20, padding: "6px 12px", cursor: "pointer",
+                      fontFamily: "inherit", fontSize: "0.8em",
+                      color: descricao === s.nome ? cat?.color : "#888",
+                      transition: "all 0.15s" }}>
+                    <span>{s.emoji}</span>
+                    <span>{s.nome}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Value */}
+        <div style={S.field}>
+          <label style={S.label}>VALOR (Kz)</label>
+          <div style={{ position: "relative" }}>
+            <span style={S.inputPrefix}>Kz</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={valorDisplay}
+              onChange={e => {
+                const digits = e.target.value.replace(/\D/g, "");
+                setValor(digits);
+                if (digits === "") { setValorDisplay(""); return; }
+                setValorDisplay(String(parseInt(digits,10)).replace(/\B(?=(\d{3})+(?!\d))/g, "."));
+              }}
+              placeholder="0"
+              style={{ ...S.input, paddingLeft: 44 }}
+            />
+          </div>
+          {v > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78em", marginBottom: 4 }}>
+                <span style={{ color: "#555" }}>Estás a gastar:</span>
+                <span style={{ fontWeight: 700, color: "#F59E0B" }}>{fmtKz(v)}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78em" }}>
+                <span style={{ color: "#555" }}>Saldo após esta despesa:</span>
+                <span style={{ fontWeight: 700, color: sobraAposEsta >= 0 ? "#22C55E" : "#EF4444" }}>
+                  {fmtKz(sobraAposEsta)}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Date */}
         <div style={S.field}>
           <label style={S.label}>DATA</label>
           <input type="date" value={data} onChange={e => setData(e.target.value)} style={S.dateInput} />
         </div>
+
         <button
-          disabled={!descricao || !valor || parseFloat(valor) <= 0}
-          onClick={() => onSave({ id: Date.now(), descricao, valor: parseFloat(valor), categoria, data })}
-          style={{ ...S.btn, opacity: descricao && valor && parseFloat(valor) > 0 ? 1 : 0.4 }}>
+          disabled={!descricao || !valor || v <= 0}
+          onClick={() => onSave({ id: Date.now(), descricao, valor: v, categoria, data })}
+          style={{ ...S.btn, opacity: descricao && v > 0 ? 1 : 0.4 }}>
           Guardar despesa
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ── GOALS SCREEN ─────────────────────────────────────────────────────────────
+function GoalsScreen({ state, onBack, onSaveGoal, onDeleteGoal }) {
+  const { salario, objectivos = [], despesas, pct } = state;
+  const [showForm, setShowForm] = useState(false);
+  const [nome, setNome] = useState("");
+  const [nomeDisplay, setNomeDisplay] = useState("");
+  const [valorAlvo, setValorAlvo] = useState("");
+  const [valorAlvoDisplay, setValorAlvoDisplay] = useState("");
+  const [poupancaMensal, setPoupancaMensal] = useState("");
+  const [poupancaMensalDisplay, setPoupancaMensalDisplay] = useState("");
+  const [categoria, setCategoria] = useState("investimento");
+  const [emoji, setEmoji] = useState("🎯");
+
+  const EMOJIS = ["🎯","🚗","🏠","✈️","📱","💍","🎓","💼","🏖️","🛒","💊","🎁"];
+
+  const handleNumInput = (raw, setSt, setDisp) => {
+    const digits = raw.replace(/\D/g, "");
+    setSt(digits);
+    if (!digits) { setDisp(""); return; }
+    setDisp(String(parseInt(digits,10)).replace(/\B(?=(\d{3})+(?!\d))/g, "."));
+  };
+
+  const totalGasto = despesas.reduce((s,d) => s + d.valor, 0);
+  const saldo = salario - totalGasto;
+
+  return (
+    <div style={S.screen}>
+      <div style={S.topBar}>
+        <button onClick={onBack} style={S.backBtn}>← Voltar</button>
+        <div style={S.screenTitle}>Os meus objectivos</div>
+        <div style={{ width: 60 }} />
+      </div>
+      <div style={{ padding: "0 16px 32px" }}>
+
+        {/* Existing goals */}
+        {objectivos.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 20 }}>
+            {objectivos.map(obj => {
+              const cat = CATS.find(c => c.id === obj.categoria);
+              const orcCat = salario * pct[obj.categoria] / 100;
+              const gastoCat = despesas.filter(d => d.categoria === obj.categoria).reduce((s,d) => s+d.valor, 0);
+              const dispCat = orcCat - gastoCat - obj.poupancaMensal;
+              const pctConcluido = Math.min(100, (obj.acumulado / obj.valorAlvo) * 100);
+              const mesesRestantes = obj.poupancaMensal > 0
+                ? Math.ceil((obj.valorAlvo - obj.acumulado) / obj.poupancaMensal)
+                : null;
+
+              return (
+                <div key={obj.id} style={{ background: "#0F0F0F", border: `1px solid ${cat?.color}30`, borderRadius: 16, padding: "16px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span style={{ fontSize: "1.8em" }}>{obj.emoji}</span>
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: "0.95em", color: "#DDD" }}>{obj.nome}</div>
+                        <div style={{ fontSize: "0.72em", color: "#555", marginTop: 2 }}>{cat?.emoji} {cat?.label}</div>
+                      </div>
+                    </div>
+                    <button onClick={() => onDeleteGoal(obj.id)}
+                      style={{ background: "transparent", border: "none", color: "#333", cursor: "pointer", fontSize: "1em" }}>✕</button>
+                  </div>
+
+                  {/* Progress bar */}
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.72em", color: "#555", marginBottom: 6 }}>
+                      <span>Acumulado: <strong style={{ color: cat?.color }}>{fmtKz(obj.acumulado)}</strong></span>
+                      <span>Alvo: <strong style={{ color: "#DDD" }}>{fmtKz(obj.valorAlvo)}</strong></span>
+                    </div>
+                    {/* Circle progress */}
+                    <div style={{ position: "relative", height: 8, background: "#1A1A1A", borderRadius: 4, overflow: "hidden" }}>
+                      <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${pctConcluido}%`, background: cat?.color, borderRadius: 4, transition: "width 0.5s" }} />
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.7em", marginTop: 4 }}>
+                      <span style={{ color: cat?.color, fontWeight: 700 }}>{pctConcluido.toFixed(0)}% concluído</span>
+                      {mesesRestantes && <span style={{ color: "#555" }}>~{mesesRestantes} meses para atingir</span>}
+                    </div>
+                  </div>
+
+                  {/* Monthly impact */}
+                  <div style={{ background: "#0A0A0A", borderRadius: 10, padding: "10px 12px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75em" }}>
+                      <span style={{ color: "#555" }}>Poupança mensal para objectivo</span>
+                      <span style={{ color: "#F59E0B", fontWeight: 700 }}>-{fmtKz(obj.poupancaMensal)}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75em", marginTop: 6 }}>
+                      <span style={{ color: "#555" }}>Disponível restante em {cat?.label}</span>
+                      <span style={{ fontWeight: 700, color: dispCat >= 0 ? "#22C55E" : "#EF4444" }}>{fmtKz(Math.max(0, dispCat))}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Add goal form */}
+        {!showForm ? (
+          <button onClick={() => setShowForm(true)}
+            style={{ width: "100%", background: "#0F0F0F", border: "1px dashed #2A2A2A", borderRadius: 14, padding: "16px", color: "#F59E0B", fontWeight: 700, fontSize: "0.92em", cursor: "pointer", fontFamily: "inherit" }}>
+            + Adicionar objectivo
+          </button>
+        ) : (
+          <div style={{ background: "#0F0F0F", border: "1px solid #1A1A1A", borderRadius: 16, padding: "18px" }}>
+            <div style={{ fontWeight: 700, color: "#DDD", marginBottom: 16, fontSize: "0.95em" }}>Novo objectivo</div>
+
+            {/* Emoji picker */}
+            <div style={S.field}>
+              <label style={S.label}>ESCOLHE UM ÍCONE</label>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {EMOJIS.map(e => (
+                  <button key={e} onClick={() => setEmoji(e)}
+                    style={{ background: emoji === e ? "#F59E0B20" : "#111", border: `1px solid ${emoji === e ? "#F59E0B" : "#222"}`, borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontSize: "1.3em" }}>
+                    {e}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={S.field}>
+              <label style={S.label}>NOME DO OBJECTIVO</label>
+              <input value={nome} onChange={e => setNome(e.target.value)}
+                placeholder="ex: Comprar carro, Viagem, Fundo de emergência"
+                style={S.input} />
+            </div>
+
+            <div style={S.field}>
+              <label style={S.label}>VALOR ALVO (Kz)</label>
+              <div style={{ position: "relative" }}>
+                <span style={S.inputPrefix}>Kz</span>
+                <input type="text" inputMode="numeric" value={valorAlvoDisplay}
+                  onChange={e => handleNumInput(e.target.value, setValorAlvo, setValorAlvoDisplay)}
+                  placeholder="0" style={{ ...S.input, paddingLeft: 44 }} />
+              </div>
+            </div>
+
+            <div style={S.field}>
+              <label style={S.label}>QUANTO GUARDAR POR MÊS (Kz)</label>
+              <div style={{ position: "relative" }}>
+                <span style={S.inputPrefix}>Kz</span>
+                <input type="text" inputMode="numeric" value={poupancaMensalDisplay}
+                  onChange={e => handleNumInput(e.target.value, setPoupancaMensal, setPoupancaMensalDisplay)}
+                  placeholder="0" style={{ ...S.input, paddingLeft: 44 }} />
+              </div>
+              {poupancaMensal && valorAlvo && (
+                <div style={{ fontSize: "0.75em", color: "#F59E0B", marginTop: 6 }}>
+                  ≈ {Math.ceil(parseInt(valorAlvo) / parseInt(poupancaMensal))} meses para atingir o objectivo
+                </div>
+              )}
+            </div>
+
+            <div style={S.field}>
+              <label style={S.label}>CATEGORIA DE ONDE SAI</label>
+              <div style={{ display: "flex", gap: 8 }}>
+                {CATS.map(c => (
+                  <button key={c.id} onClick={() => setCategoria(c.id)}
+                    style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, background: categoria === c.id ? `${c.color}18` : "#0A0A0A", border: `1px solid ${categoria === c.id ? c.color : "#1E1E1E"}`, borderRadius: 10, padding: "8px 4px", cursor: "pointer", fontFamily: "inherit" }}>
+                    <span style={{ fontSize: "1.2em" }}>{c.emoji}</span>
+                    <span style={{ fontSize: "0.62em", fontWeight: 700, color: categoria === c.id ? c.color : "#555", textAlign: "center" }}>{c.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => setShowForm(false)}
+                style={{ flex: 1, background: "transparent", border: "1px solid #222", borderRadius: 12, padding: "13px", color: "#555", cursor: "pointer", fontFamily: "inherit" }}>
+                Cancelar
+              </button>
+              <button
+                disabled={!nome || !valorAlvo || !poupancaMensal}
+                onClick={() => {
+                  onSaveGoal({ id: Date.now(), nome, emoji, valorAlvo: parseInt(valorAlvo), poupancaMensal: parseInt(poupancaMensal), categoria, acumulado: 0 });
+                  setShowForm(false);
+                  setNome(""); setValorAlvo(""); setValorAlvoDisplay(""); setPoupancaMensal(""); setPoupancaMensalDisplay(""); setEmoji("🎯");
+                }}
+                style={{ flex: 2, background: "#F59E0B", border: "none", borderRadius: 12, padding: "13px", color: "#000", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", opacity: nome && valorAlvo && poupancaMensal ? 1 : 0.4 }}>
+                Guardar objectivo
+              </button>
+            </div>
+          </div>
+        )}
+
+        {objectivos.length === 0 && !showForm && (
+          <div style={{ textAlign: "center", padding: "32px 16px", color: "#333" }}>
+            <div style={{ fontSize: "2.5em", marginBottom: 10 }}>🎯</div>
+            <div style={{ fontSize: "0.85em", color: "#555" }}>Define um objectivo e vê quanto tempo demoras a atingi-lo.</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── CHARTS SCREEN ────────────────────────────────────────────────────────────
+function ChartsScreen({ state, onBack }) {
+  const { salario, despesas, pct } = state;
+  const totalGasto = despesas.reduce((s, d) => s + d.valor, 0);
+  const saldo = salario - totalGasto;
+
+  // Per category totals
+  const catTotals = CATS.map(c => ({
+    ...c,
+    gasto: despesas.filter(d => d.categoria === c.id).reduce((s, d) => s + d.valor, 0),
+    orcamento: salario * pct[c.id] / 100,
+  }));
+
+  // Per description breakdown (top 6)
+  const byDesc = {};
+  despesas.forEach(d => { byDesc[d.descricao] = (byDesc[d.descricao] || 0) + d.valor; });
+  const topDesc = Object.entries(byDesc).sort((a, b) => b[1] - a[1]).slice(0, 6);
+
+  // Donut chart: SVG
+  const radius = 54, cx = 70, cy = 70, circ = 2 * Math.PI * radius;
+  let offset = 0;
+  const slices = totalGasto > 0
+    ? catTotals.filter(c => c.gasto > 0).map(c => {
+        const pctSlice = c.gasto / totalGasto;
+        const dash = pctSlice * circ;
+        const slice = { id: c.id, color: c.color, dash, offset, label: c.label, pct: (pctSlice * 100).toFixed(0) };
+        offset += dash;
+        return slice;
+      })
+    : [];
+
+  return (
+    <div style={S.screen}>
+      <div style={S.topBar}>
+        <button onClick={onBack} style={S.backBtn}>← Voltar</button>
+        <div style={S.screenTitle}>Análise de gastos</div>
+        <div style={{ width: 60 }} />
+      </div>
+      <div style={{ padding: "0 16px 32px" }}>
+
+        {/* Summary row */}
+        <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
+          {[
+            { label: "Total gasto", value: totalGasto, color: "#EF4444" },
+            { label: "Saldo restante", value: saldo, color: saldo >= 0 ? "#22C55E" : "#EF4444" },
+          ].map((item, i) => (
+            <div key={i} style={{ flex: 1, background: "#0F0F0F", border: "1px solid #1A1A1A", borderRadius: 14, padding: "14px" }}>
+              <div style={{ fontSize: "0.68em", color: "#555", fontWeight: 700, letterSpacing: "0.08em", marginBottom: 6 }}>{item.label.toUpperCase()}</div>
+              <div style={{ fontSize: "1.1em", fontWeight: 800, color: item.color }}>{fmtKz(item.value)}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Donut chart */}
+        {despesas.length > 0 ? (
+          <>
+            <div style={{ ...S.sectionTitle, padding: 0, marginBottom: 14 }}>DISTRIBUIÇÃO POR CATEGORIA</div>
+            <div style={{ background: "#0F0F0F", border: "1px solid #1A1A1A", borderRadius: 16, padding: "20px", marginBottom: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+                {/* SVG Donut */}
+                <svg width="140" height="140" style={{ flexShrink: 0 }}>
+                  <circle cx={cx} cy={cy} r={radius} fill="none" stroke="#1A1A1A" strokeWidth="18" />
+                  {slices.map(s => (
+                    <circle key={s.id} cx={cx} cy={cy} r={radius} fill="none"
+                      stroke={s.color} strokeWidth="18"
+                      strokeDasharray={`${s.dash} ${circ - s.dash}`}
+                      strokeDashoffset={-(s.offset - circ / 4)}
+                      style={{ transition: "stroke-dasharray 0.5s ease" }}
+                    />
+                  ))}
+                  <text x={cx} y={cy - 6} textAnchor="middle" fill="#DDD" fontSize="11" fontWeight="700" fontFamily="Plus Jakarta Sans, sans-serif">GASTO</text>
+                  <text x={cx} y={cy + 10} textAnchor="middle" fill="#F59E0B" fontSize="11" fontWeight="800" fontFamily="Plus Jakarta Sans, sans-serif">{totalGasto > 0 ? ((totalGasto/salario)*100).toFixed(0) : 0}%</text>
+                </svg>
+                {/* Legend */}
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 10 }}>
+                  {catTotals.map(c => (
+                    <div key={c.id}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                        <span style={{ fontSize: "0.8em", color: "#CCC", display: "flex", alignItems: "center", gap: 5 }}>
+                          <span style={{ width: 8, height: 8, borderRadius: "50%", background: c.color, display: "inline-block" }} />
+                          {c.emoji} {c.label}
+                        </span>
+                        <span style={{ fontSize: "0.78em", fontWeight: 700, color: c.gasto > c.orcamento ? "#EF4444" : c.color }}>
+                          {c.orcamento > 0 ? ((c.gasto / c.orcamento) * 100).toFixed(0) : 0}%
+                        </span>
+                      </div>
+                      <div style={{ height: 4, background: "#1A1A1A", borderRadius: 2, overflow: "hidden" }}>
+                        <div style={{ width: `${Math.min(100, c.orcamento > 0 ? (c.gasto / c.orcamento) * 100 : 0)}%`, height: "100%", background: c.gasto > c.orcamento ? "#EF4444" : c.color, borderRadius: 2, transition: "width 0.5s" }} />
+                      </div>
+                      <div style={{ fontSize: "0.7em", color: "#555", marginTop: 2 }}>
+                        {fmtKz(c.gasto)} / {fmtKz(c.orcamento)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Top spending items */}
+            {topDesc.length > 0 && (
+              <>
+                <div style={{ ...S.sectionTitle, padding: 0, marginBottom: 12 }}>ONDE GASTAS MAIS</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {topDesc.map(([nome, total], i) => {
+                    const exp = despesas.find(d => d.descricao === nome);
+                    const cat = CATS.find(c => c.id === exp?.categoria);
+                    const pctBar = totalGasto > 0 ? (total / totalGasto) * 100 : 0;
+                    return (
+                      <div key={nome} style={{ background: "#0F0F0F", border: "1px solid #1A1A1A", borderRadius: 12, padding: "12px 14px" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ fontSize: "0.7em", fontWeight: 800, color: "#444", minWidth: 16 }}>#{i + 1}</span>
+                            <span style={{ fontSize: "0.9em", fontWeight: 600, color: "#DDD" }}>{nome}</span>
+                            {cat && <span style={{ fontSize: "0.65em", background: `${cat.color}20`, color: cat.color, padding: "2px 7px", borderRadius: 10, fontWeight: 700 }}>{cat.label}</span>}
+                          </div>
+                          <span style={{ fontWeight: 700, color: "#EF4444", fontSize: "0.88em" }}>{fmtKz(total)}</span>
+                        </div>
+                        <div style={{ height: 3, background: "#1A1A1A", borderRadius: 2, overflow: "hidden" }}>
+                          <div style={{ width: `${pctBar}%`, height: "100%", background: cat?.color || "#F59E0B", borderRadius: 2 }} />
+                        </div>
+                        <div style={{ fontSize: "0.68em", color: "#444", marginTop: 3 }}>{pctBar.toFixed(1)}% do total gasto</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </>
+        ) : (
+          <div style={{ textAlign: "center", padding: "40px 20px", color: "#444" }}>
+            <div style={{ fontSize: "3em", marginBottom: 12 }}>📊</div>
+            <div style={{ fontWeight: 700, color: "#666", marginBottom: 8 }}>Ainda sem dados</div>
+            <div style={{ fontSize: "0.85em" }}>Regista as tuas primeiras despesas para ver os gráficos.</div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -936,6 +1428,50 @@ function TrialExpiredScreen({ onReservar }) {
   );
 }
 
+// ── BOTTOM NAV ────────────────────────────────────────────────────────────────
+function BottomNav({ active, onHome, onGoals, onSettings }) {
+  const tabs = [
+    { id: "dashboard", label: "Início",      emoji: "🏠", action: onHome },
+    { id: "goals",     label: "Objectivos",  emoji: "🎯", action: onGoals },
+    { id: "settings",  label: "Definições",  emoji: "⚙️", action: onSettings },
+  ];
+  return (
+    <div style={{
+      position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)",
+      width: "100%", maxWidth: 480,
+      background: "#0C0C0C",
+      borderTop: "1px solid #1A1A1A",
+      display: "flex",
+      zIndex: 100,
+      paddingBottom: "env(safe-area-inset-bottom, 0px)",
+    }}>
+      {tabs.map(t => (
+        <button key={t.id} onClick={t.action}
+          style={{
+            flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
+            gap: 3, padding: "10px 8px 12px",
+            background: "transparent", border: "none", cursor: "pointer",
+            fontFamily: "inherit", transition: "all 0.15s",
+          }}>
+          <span style={{
+            fontSize: "1.5em", lineHeight: 1,
+            filter: active === t.id ? "none" : "grayscale(1) opacity(0.4)",
+            transition: "all 0.15s",
+          }}>{t.emoji}</span>
+          <span style={{
+            fontSize: "0.62em", fontWeight: active === t.id ? 700 : 400,
+            color: active === t.id ? "#F59E0B" : "#444",
+            letterSpacing: "0.04em",
+          }}>{t.label}</span>
+          {active === t.id && (
+            <div style={{ width: 20, height: 3, borderRadius: 2, background: "#F59E0B", marginTop: 1 }} />
+          )}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ── APP ROOT ──────────────────────────────────────────────────────────────────
 const TRIAL_DAYS = 14;
 const BANNER_FROM_DAY = 4; // show banner starting day 4
@@ -947,9 +1483,10 @@ const INIT = {
   proximoPagamento: addMonths(todayStr(), 1),
   pct: { ...DEFAULT_PCT },
   despesas: [],
-  setupDate: null,       // date string when user first set up
-  reservas: [],          // list of {email, date} pre-reservations
-  bannerDismissed: false,// user closed banner (resets after each new expense)
+  objectivos: [],        // list of savings goals
+  setupDate: null,
+  reservas: [],
+  bannerDismissed: false,
 };
 
 export default function App() {
@@ -975,9 +1512,16 @@ export default function App() {
 
   const handleAddExpense = (expense) => {
     setState(prev => ({ ...prev, despesas: [...prev.despesas, expense] }));
-    // Show banner after saving if eligible
     if (showBannerEligible) setShowBanner(true);
     setScreen("dashboard");
+  };
+
+  const handleSaveGoal = (goal) => {
+    setState(prev => ({ ...prev, objectivos: [...(prev.objectivos || []), goal] }));
+  };
+
+  const handleDeleteGoal = (id) => {
+    setState(prev => ({ ...prev, objectivos: (prev.objectivos || []).filter(g => g.id !== id) }));
   };
 
   const handleReservar = (email) => {
@@ -998,6 +1542,10 @@ export default function App() {
       </div>
     );
   }
+
+  // Which tabs show the bottom nav
+  const showNav = ["dashboard","goals","settings","charts","chat"].includes(screen);
+  const navActive = ["goals","settings"].includes(screen) ? screen : "dashboard";
 
   return (
     <div style={S.app}>
@@ -1021,6 +1569,8 @@ export default function App() {
             state={state}
             onAddExpense={() => setScreen("add")}
             onOpenChat={() => setScreen("chat")}
+            onOpenCharts={() => setScreen("charts")}
+            onOpenGoals={() => setScreen("goals")}
             onSettings={() => setScreen("settings")}
           />
           {/* Trial countdown chip always visible from day 4 */}
@@ -1044,8 +1594,22 @@ export default function App() {
         </>
       )}
       {screen === "settings"   && <SettingsScreen state={state} onSave={handleSettingsSave} onBack={() => setScreen("dashboard")} />}
-      {screen === "add"        && <AddExpenseScreen onSave={handleAddExpense} onBack={() => setScreen("dashboard")} />}
+      {screen === "add"        && <AddExpenseScreen onSave={handleAddExpense} onBack={() => setScreen("dashboard")}
+                                    despesasAnteriores={state.despesas}
+                                    saldoRestante={state.salario - state.despesas.reduce((s,d) => s+d.valor, 0)} />}
+      {screen === "goals"      && <GoalsScreen state={state} onBack={() => setScreen("dashboard")} onSaveGoal={handleSaveGoal} onDeleteGoal={handleDeleteGoal} />}
+      {screen === "charts"     && <ChartsScreen state={state} onBack={() => setScreen("dashboard")} />}
       {screen === "chat"       && <ChatScreen state={state} onBack={() => setScreen("dashboard")} />}
+
+      {/* Bottom Navigation */}
+      {showNav && (
+        <BottomNav
+          active={navActive}
+          onHome={() => setScreen("dashboard")}
+          onGoals={() => setScreen("goals")}
+          onSettings={() => setScreen("settings")}
+        />
+      )}
     </div>
   );
 }
