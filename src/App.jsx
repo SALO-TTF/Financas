@@ -37,6 +37,33 @@ const CATS = [
   { id: "investimento", label: "Investimento",        emoji: "💎", color: "#F59E0B", desc: "Poupança, negócio, fundo de emergência" },
 ];
 
+// ── COMUNIDADE & CONQUISTAS ───────────────────────────────────────────────────
+// Contador base simulado — em produção viria de uma API/base de dados
+const BASE_COMMUNITY_COUNT = 8347;
+
+// Gera código de convite único por sessão (em produção seria por utilizador autenticado)
+const generateInviteCode = () => {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return code;
+};
+
+// Níveis de conquista — celebram GASTAR com intenção, não restringir
+const NIVEIS = [
+  { id: "iniciado",     label: "Iniciado",     emoji: "🌱", desc: "Primeiro dia a gastar com intenção",        dias: 1  },
+  { id: "consciente",  label: "Consciente",   emoji: "💡", desc: "7 dias a saber o que podes gastar",          dias: 7  },
+  { id: "consistente", label: "Consistente",  emoji: "🔥", desc: "14 dias sem surpresas no fim do mês",        dias: 14 },
+  { id: "livre",       label: "Livre",        emoji: "🦅", desc: "30 dias a gastar no que queres, sem culpa",  dias: 30 },
+  { id: "mestre",      label: "Mestre",       emoji: "💎", desc: "60 dias. O dinheiro trabalha para ti.",      dias: 60 },
+];
+
+const getNivel = (diasAtivos) => {
+  let nivel = NIVEIS[0];
+  for (const n of NIVEIS) { if (diasAtivos >= n.dias) nivel = n; }
+  return nivel;
+};
+
 const DEFAULT_PCT = { necessidades: 60, qualidade: 30, investimento: 10 };
 
 // Pre-defined expense suggestions per category
@@ -114,42 +141,53 @@ REGRAS:
 // ── SETUP (multi-step, with free back navigation + editable %) ────────────────
 function SetupScreen({ onComplete }) {
   const [step, setStep] = useState(0);
+  const [nome, setNome] = useState("");
   const [salario, setSalario] = useState("");
   const [salarioDisplay, setSalarioDisplay] = useState("");
   const [dataRecebimento, setDataRecebimento] = useState(todayStr());
   const [proximoPagamento, setProximoPagamento] = useState("");
-  const [pct, setPct] = useState({ ...DEFAULT_PCT });
 
-  // Format number while typing: "1000000" → "1.000.000"
   const handleSalarioChange = (raw) => {
     const digits = raw.replace(/\D/g, "");
     setSalario(digits);
     if (digits === "") { setSalarioDisplay(""); return; }
     const num = parseInt(digits, 10);
-    const formatted = String(num).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-    setSalarioDisplay(formatted);
+    setSalarioDisplay(String(num).replace(/\B(?=(\d{3})+(?!\d))/g, "."));
   };
 
-  // Independent fields. Allow empty while typing — validate on total only.
-  const handlePct = (id, raw) => {
-    // Allow empty string while user is clearing to retype
-    if (raw === "" || raw === "-") {
-      setPct(prev => ({ ...prev, [id]: "" }));
-      return;
-    }
-    const val = Math.min(100, Math.max(0, parseInt(raw) || 0));
-    setPct(prev => ({ ...prev, [id]: val }));
-  };
-
-
-  const totalPct = Object.values(pct).reduce((a, b) => a + (parseInt(b) || 0), 0);
   const sal = parseFloat(salario) || 0;
+  const datasValidas = !!dataRecebimento && !!proximoPagamento && proximoPagamento > todayStr();
+  const primeiroNome = nome.trim().split(" ")[0];
 
   const steps = [
-    // Step 0 – rendimento
+    // Passo 0 — nome
     {
-      title: "Qual é o teu rendimento mensal?",
-      subtitle: "Inclui salário, negócio, rendas — tudo que entra",
+      title: "Como preferes que te chame?",
+      subtitle: "Para tornar esta experiência tua",
+      valid: nome.trim().length >= 2,
+      body: (
+        <div>
+          <input
+            autoFocus
+            type="text"
+            value={nome}
+            onChange={e => setNome(e.target.value)}
+            placeholder="O teu nome"
+            style={{ ...S.dateInput, fontSize: "1.3em", fontWeight: 700, padding: "16px 20px", letterSpacing: "-0.01em" }}
+          />
+          {nome.trim().length >= 2 && (
+            <div style={{ marginTop: 16, fontSize: "0.92em", color: "#8A8070", textAlign: "center" }}>
+              Olá, <span style={{ color: "#F59E0B", fontWeight: 700 }}>{primeiroNome}</span> 👋
+            </div>
+          )}
+        </div>
+      ),
+    },
+    // Passo 1 — rendimento
+    {
+      title: "Quanto recebes por mês?",
+      subtitle: "Inclui tudo que entra — salário, negócio, rendas",
+      hint: sal > 0 ? null : "Escreve o valor e avança",
       valid: sal > 0,
       body: (
         <div>
@@ -165,116 +203,58 @@ function SetupScreen({ onComplete }) {
               style={S.bigInput}
             />
           </div>
-          {sal > 0 && (
-            <div style={{ textAlign: "center", margin: "8px 0 4px", fontSize: "0.78em", color: "#666", letterSpacing: "0.04em" }}>
-              {fmtKz(sal)} — valor confirmado
-            </div>
-          )}
-          {sal > 0 && (
-            <div style={S.preview}>
+          {sal > 0 ? (
+            <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ fontSize: "0.82em", color: "#8A8070", marginBottom: 4 }}>
+                O app vai dividir automaticamente:
+              </div>
               {CATS.map(c => (
-                <div key={c.id} style={S.previewRow}>
-                  <span style={{ color: "#888" }}>{c.emoji} {c.label}</span>
-                  <span style={{ color: c.color, fontWeight: 700 }}>
-                    {fmtKz(sal * pct[c.id] / 100)}
-                    <span style={{ color: "#555", fontWeight: 400, fontSize: "0.8em" }}> · {pct[c.id]}%</span>
+                <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#0D0D0D", border: "1px solid #161616", borderRadius: 12, padding: "12px 16px" }}>
+                  <span style={{ color: "#A09880", fontSize: "0.92em" }}>{c.emoji} {c.label}</span>
+                  <span style={{ color: c.color, fontWeight: 700, fontSize: "0.95em" }}>
+                    {fmtKz(sal * DEFAULT_PCT[c.id] / 100)}
                   </span>
                 </div>
               ))}
+              <div style={{ fontSize: "0.78em", color: "#6A6050", textAlign: "center", marginTop: 4 }}>
+                Podes ajustar estas percentagens nas Definições
+              </div>
+            </div>
+          ) : (
+            <div style={{ marginTop: 24, fontSize: "0.88em", color: "#6A6050", textAlign: "center", lineHeight: 1.6 }}>
+              A partir deste valor calculamos quanto podes gastar cada dia sem surpresas no fim do mês
             </div>
           )}
         </div>
       ),
     },
-    // Step 1 – percentagens
+    // Passo 2 — datas
     {
-      title: "Ajusta as tuas percentagens",
-      subtitle: "Sugerimos 60 · 30 · 10 — mas podes personalizar. O total tem de ser 100%.",
-      valid: totalPct === 100,
+      title: "Quando recebes o teu dinheiro?",
+      subtitle: "Para calcularmos o teu dia a dia com exactidão",
+      valid: datasValidas,
       body: (
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {CATS.map(c => (
-            <div key={c.id} style={{ background: "#0A0A0A", border: `1px solid ${pct[c.id] > 0 ? c.color + "40" : "#1E1E1E"}`, borderRadius: 14, padding: "14px 16px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: "0.9em", color: "#DDD" }}>{c.emoji} {c.label}</div>
-                  <div style={{ fontSize: "0.72em", color: "#555", marginTop: 2 }}>{c.desc}</div>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <input
-                    type="number"
-                    min="0" max="100"
-                    value={pct[c.id] === "" ? "" : pct[c.id]}
-                    onChange={e => handlePct(c.id, e.target.value)}
-                    style={{ width: 58, background: "#111", border: `2px solid ${c.color}`, borderRadius: 8, padding: "6px 8px", color: c.color, fontWeight: 800, fontSize: "1.1em", fontFamily: "inherit", outline: "none", textAlign: "center" }}
-                  />
-                  <span style={{ color: "#555", fontSize: "0.9em" }}>%</span>
-                </div>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ flex: 1, height: 5, background: "#1A1A1A", borderRadius: 3, overflow: "hidden", marginRight: 10 }}>
-                  <div style={{ width: `${pct[c.id]}%`, height: "100%", background: c.color, borderRadius: 3, transition: "width 0.3s" }} />
-                </div>
-                <span style={{ fontSize: "0.8em", color: c.color, fontWeight: 700 }}>{fmtKz(sal * pct[c.id] / 100)}</span>
-              </div>
-            </div>
-          ))}
-          <div style={{
-            textAlign: "center", fontSize: "0.9em", fontWeight: 800,
-            color: totalPct === 100 ? "#22C55E" : totalPct > 100 ? "#EF4444" : "#F59E0B",
-            padding: "12px", borderRadius: 12,
-            background: totalPct === 100 ? "#22C55E15" : totalPct > 100 ? "#EF444415" : "#F59E0B15",
-            border: `2px solid ${totalPct === 100 ? "#22C55E40" : totalPct > 100 ? "#EF444440" : "#F59E0B40"}`,
-            fontSize: "1em",
-          }}>
-            {totalPct === 100
-              ? "✅ Total: 100% — perfeito!"
-              : totalPct > 100
-                ? `🔴 Total: ${totalPct}% — excedeste em ${totalPct - 100}%`
-                : `🟡 Total: ${totalPct}% — ainda faltam ${100 - totalPct}%`}
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div>
+            <label style={S.label}>ÚLTIMO PAGAMENTO</label>
+            <input type="date" value={dataRecebimento}
+              onChange={e => setDataRecebimento(e.target.value)} style={S.dateInput} />
           </div>
-          {totalPct !== 100 && (
-            <button
-              onClick={() => {
-                // Auto-fix: set last category to make up the difference
-                const lastCat = CATS[CATS.length - 1];
-                const othersSum = CATS.slice(0,-1).reduce((s,c) => s + pct[c.id], 0);
-                setPct(prev => ({ ...prev, [lastCat.id]: Math.max(0, 100 - othersSum) }));
-              }}
-              style={{ width: "100%", background: "#1A1A1A", border: "1px dashed #333", borderRadius: 10, padding: "8px", color: "#666", fontSize: "0.78em", cursor: "pointer", fontFamily: "inherit" }}>
-              Ajustar automaticamente para 100%
-            </button>
-          )}
-        </div>
-      ),
-    },
-    // Step 2 – último recebimento
-    {
-      title: "Quando recebeste o último pagamento?",
-      subtitle: "Para calcular o teu orçamento deste período",
-      valid: !!dataRecebimento,
-      body: (
-        <div>
-          <input type="date" value={dataRecebimento}
-            onChange={e => setDataRecebimento(e.target.value)} style={S.dateInput} />
-          <div style={S.dateTip}>📅 Podes alterar esta data sempre que quiseres</div>
-        </div>
-      ),
-    },
-    // Step 3 – próximo pagamento
-    {
-      title: "Quando recebes o próximo pagamento?",
-      subtitle: "Calculamos automaticamente quanto podes gastar por dia",
-      valid: !!proximoPagamento && proximoPagamento > todayStr(),
-      body: (
-        <div>
-          <input type="date" value={proximoPagamento}
-            onChange={e => setProximoPagamento(e.target.value)} style={S.dateInput} />
-          {proximoPagamento && (
-            <div style={{ ...S.dateTip, color: daysUntil(proximoPagamento) > 0 ? "#22C55E" : "#EF4444" }}>
-              📊 {daysUntil(proximoPagamento)} dias a partir de hoje até ao próximo pagamento
-            </div>
-          )}
+          <div>
+            <label style={S.label}>PRÓXIMO PAGAMENTO</label>
+            <input type="date" value={proximoPagamento}
+              onChange={e => setProximoPagamento(e.target.value)} style={S.dateInput} />
+            {proximoPagamento && proximoPagamento <= todayStr() && (
+              <div style={{ fontSize: "0.82em", color: "#EF4444", marginTop: 8 }}>
+                ⚠️ A data tem de ser no futuro
+              </div>
+            )}
+            {datasValidas && (
+              <div style={{ fontSize: "0.82em", color: "#22C55E", marginTop: 8 }}>
+                ✓ {daysUntil(proximoPagamento)} dias até ao próximo pagamento
+              </div>
+            )}
+          </div>
         </div>
       ),
     },
@@ -287,20 +267,20 @@ function SetupScreen({ onComplete }) {
       <div style={S.setupCard}>
         <div style={S.logo}>💰 Minhas Finanças</div>
 
-        {/* Step indicators – clickable to go back */}
+        {/* Dots de progresso — visíveis */}
         <div style={S.stepDots}>
-          {steps.map((s, i) => (
-            <button
-              key={i}
-              onClick={() => i < step && setStep(i)}
-              style={{
-                width: i === step ? 24 : 8, height: 8, borderRadius: 4,
-                background: i < step ? "#F59E0B" : i === step ? "#F59E0B" : "#2A2A2A",
-                border: "none", cursor: i < step ? "pointer" : "default",
-                transition: "all 0.3s", padding: 0,
-              }}
-            />
+          {steps.map((_, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <div style={{
+                width: i === step ? 28 : 8, height: 8, borderRadius: 4,
+                background: i < step ? "#F59E0B" : i === step ? "#F59E0B" : "#333",
+                transition: "all 0.3s",
+              }} />
+            </div>
           ))}
+          <div style={{ fontSize: "0.78em", color: "#6A6050", marginLeft: 6 }}>
+            {step + 1} de {steps.length}
+          </div>
         </div>
 
         <h2 style={S.setupTitle}>{cur.title}</h2>
@@ -308,21 +288,36 @@ function SetupScreen({ onComplete }) {
 
         <div style={{ margin: "24px 0" }}>{cur.body}</div>
 
+        {/* Botão inactivo explica o que falta */}
+        {!cur.valid && step === 0 && nome.trim().length < 2 && (
+          <div style={{ fontSize: "0.82em", color: "#6A6050", textAlign: "center", marginBottom: 10 }}>
+            Escreve o teu nome para continuar
+          </div>
+        )}
+        {!cur.valid && step === 1 && sal === 0 && (
+          <div style={{ fontSize: "0.82em", color: "#6A6050", textAlign: "center", marginBottom: 10 }}>
+            Escreve o teu rendimento para continuar
+          </div>
+        )}
+        {!cur.valid && step === 2 && !datasValidas && (
+          <div style={{ fontSize: "0.82em", color: "#6A6050", textAlign: "center", marginBottom: 10 }}>
+            {!proximoPagamento ? "Indica a data do próximo pagamento" : "A data tem de ser no futuro"}
+          </div>
+        )}
+
         <div style={{ display: "flex", gap: 10 }}>
           {step > 0 && (
-            <button onClick={() => setStep(step - 1)} style={S.backBtnSetup}>
-              ← Voltar
-            </button>
+            <button onClick={() => setStep(step - 1)} style={S.backBtnSetup}>← Voltar</button>
           )}
           <button
             disabled={!cur.valid}
             onClick={() => {
               if (step < steps.length - 1) setStep(step + 1);
-              else onComplete({ salario: sal, dataRecebimento, proximoPagamento, pct });
+              else onComplete({ nome: nome.trim(), salario: sal, dataRecebimento, proximoPagamento, pct: { ...DEFAULT_PCT } });
             }}
-            style={{ ...S.btn, opacity: cur.valid ? 1 : 0.4, flex: 1 }}
+            style={{ ...S.btn, opacity: cur.valid ? 1 : 0.35, flex: 1 }}
           >
-            {step < steps.length - 1 ? "Continuar →" : "Começar 🚀"}
+            {step < steps.length - 1 ? "Continuar →" : "Ver quanto posso gastar 🚀"}
           </button>
         </div>
       </div>
@@ -344,9 +339,9 @@ function ValidationScreen({ onDone }) {
       <div style={S.setup}>
         <div style={{ ...S.setupCard, textAlign: "center" }}>
           <div style={{ fontSize: "3em", marginBottom: 16 }}>🎉</div>
-          <div style={S.logo}>Obrigada!</div>
-          <p style={{ color: "#888", fontSize: "0.92em", lineHeight: 1.6, marginBottom: 24 }}>
-            O teu feedback é valioso. {reserva === "sim" ? "Vamos contactar-te assim que o app estiver disponível!" : "Podes continuar a usar a versão de teste à vontade."}
+          <div style={{ fontSize: "1.3em", fontWeight: 800, color: "#E8E0D0", marginBottom: 10 }}>Obrigado!</div>
+          <p style={{ color: "#8A8070", fontSize: "0.92em", lineHeight: 1.6, marginBottom: 24 }}>
+            {reserva === "sim" ? "Reserva garantida. Vamos contactar-te antes de toda a gente." : "O teu feedback vai melhorar o app para toda a gente."}
           </p>
           <button onClick={onDone} style={S.btn}>Entrar no app →</button>
         </div>
@@ -358,18 +353,22 @@ function ValidationScreen({ onDone }) {
     <div style={S.setup}>
       <div style={S.setupCard}>
         <div style={S.logo}>💰 Minhas Finanças</div>
-        <div style={{ background: "#F59E0B15", border: "1px solid #F59E0B30", borderRadius: 12, padding: "10px 14px", marginBottom: 20 }}>
-          <div style={{ fontSize: "0.72em", fontWeight: 700, color: "#F59E0B", letterSpacing: "0.08em" }}>VERSÃO DE TESTE</div>
-          <div style={{ fontSize: "0.82em", color: "#888", marginTop: 4 }}>Estamos a validar o produto. A tua opinião define o futuro da app.</div>
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: "1.2em", fontWeight: 800, color: "#E8E0D0", marginBottom: 8, lineHeight: 1.3 }}>
+            Já usaste o app uma semana. A tua opinião importa.
+          </div>
+          <div style={{ fontSize: "0.9em", color: "#8A8070", lineHeight: 1.6 }}>
+            Duas perguntas rápidas para melhorarmos o que estás a usar.
+          </div>
         </div>
 
         {/* Question 1 */}
         <div style={S.valQuestion}>
-          <p style={S.valQ}>📱 Gostavas que a app ligasse automaticamente ao teu banco, para não teres de inserir despesas manualmente?</p>
+          <p style={S.valQ}>📱 Gostavas que o app registasse os teus gastos automaticamente, sem teres de escrever cada despesa?</p>
           <div style={S.valOptions}>
             {["sim", "nao"].map(v => (
               <button key={v} onClick={() => setBankSync(v)}
-                style={{ ...S.valOption, borderColor: bankSync === v ? "#F59E0B" : "#1E1E1E", background: bankSync === v ? "#F59E0B15" : "#0A0A0A", color: bankSync === v ? "#F59E0B" : "#888" }}>
+                style={{ ...S.valOption, borderColor: bankSync === v ? "#F59E0B" : "#1E1E1E", background: bankSync === v ? "#F59E0B15" : "#0A0A0A", color: bankSync === v ? "#F59E0B" : "#A09880" }}>
                 {v === "sim" ? "✅ Sim, com certeza!" : "❌ Prefiro inserir eu"}
               </button>
             ))}
@@ -378,11 +377,11 @@ function ValidationScreen({ onDone }) {
 
         {/* Question 2 */}
         <div style={S.valQuestion}>
-          <p style={S.valQ}>🚀 Queres fazer uma pré-reserva? O app terá uma versão paga — reservar agora garante acesso antecipado e preço especial.</p>
+          <p style={S.valQ}>🚀 O app vai ter um plano mensal. Queres garantir o teu lugar agora, com preço especial de fundador?</p>
           <div style={S.valOptions}>
             {["sim", "nao"].map(v => (
               <button key={v} onClick={() => setReserva(v)}
-                style={{ ...S.valOption, borderColor: reserva === v ? "#22C55E" : "#1E1E1E", background: reserva === v ? "#22C55E15" : "#0A0A0A", color: reserva === v ? "#22C55E" : "#888" }}>
+                style={{ ...S.valOption, borderColor: reserva === v ? "#22C55E" : "#1E1E1E", background: reserva === v ? "#22C55E15" : "#0A0A0A", color: reserva === v ? "#22C55E" : "#A09880" }}>
                 {v === "sim" ? "✅ Quero reservar!" : "❌ Só quero testar"}
               </button>
             ))}
@@ -410,7 +409,7 @@ function ValidationScreen({ onDone }) {
           {reserva === "sim" ? "Guardar pré-reserva 🎯" : "Continuar para o app →"}
         </button>
 
-        <button onClick={onDone} style={{ width: "100%", background: "transparent", border: "none", color: "#444", fontSize: "0.82em", marginTop: 12, cursor: "pointer", fontFamily: "inherit" }}>
+        <button onClick={onDone} style={{ width: "100%", background: "transparent", border: "none", color: "#6A6050", fontSize: "0.82em", marginTop: 12, cursor: "pointer", fontFamily: "inherit" }}>
           Saltar esta etapa
         </button>
       </div>
@@ -419,7 +418,7 @@ function ValidationScreen({ onDone }) {
 }
 
 // ── DASHBOARD ─────────────────────────────────────────────────────────────────
-function DashboardScreen({ state, onAddExpense, onOpenChat, onOpenCharts, onOpenGoals }) {
+function DashboardScreen({ state, onAddExpense, onOpenChat, onOpenCharts, onOpenGoals, onOpenConvite }) {
   const { salario, dataRecebimento, proximoPagamento, despesas, pct, objectivos = [] } = state;
 
   // Period: dataRecebimento → proximoPagamento
@@ -466,8 +465,12 @@ function DashboardScreen({ state, onAddExpense, onOpenChat, onOpenCharts, onOpen
       {/* Header */}
       <div style={S.header}>
         <div>
-          <div style={S.logo}>💰 Minhas Finanças</div>
-          <div style={S.headerSub}>kwanza a kwanza, o futuro constrói-se</div>
+          <div style={S.logo}>
+            {state.nome
+              ? `Olá, ${state.nome.split(" ")[0]} 👋`
+              : "💰 Minhas Finanças"}
+          </div>
+          <div style={S.headerSub}>o teu dinheiro. a tua liberdade.</div>
         </div>
 
       </div>
@@ -486,53 +489,27 @@ function DashboardScreen({ state, onAddExpense, onOpenChat, onOpenCharts, onOpen
         <div style={{ ...S.heroAmount, color: heroPositive ? "#F59E0B" : "#EF4444" }}>
           {gastoDiario >= 0 ? fmtKz(gastoDiario) : fmtKz(Math.abs(gastoDiario))}
         </div>
-        <div style={{ ...S.heroSub, color: heroPositive ? "#7A6A40" : "#8A4030" }}>
+        <div style={{ ...S.heroSub, color: heroPositive ? "#A08850" : "#C06040" }}>
           {gastoDiario >= 0
             ? `${diasRestantes} dias até ao próximo pagamento`
             : `Precisas de compensar nos próximos ${diasRestantes} dias`}
         </div>
 
-        {/* Context line: vs expected */}
-        {diasPassados > 0 && totalGasto > 0 && (
-          <div style={{
-            marginTop: 10,
-            fontSize: "0.75em",
-            color: acimaDoEsperado ? "#EF444490" : "#22C55E90",
-            fontWeight: 600,
-          }}>
-            {acimaDoEsperado
-              ? `⚠️ ${fmtKz(diferencaVsEsperado)} acima do ritmo ideal`
-              : `✓ ${fmtKz(diferencaVsEsperado)} abaixo do ritmo — bom trabalho!`}
-          </div>
-        )}
-
         <div style={S.heroDivider} />
         <div style={S.heroRow}>
           <div>
             <div style={S.heroSmallLabel}>Sobra este mês</div>
-            <div style={{ ...S.heroSmall, color: saldo >= 0 ? "#C8A040" : "#EF4444", fontSize: "1.1em", fontWeight: 800 }}>{fmtKz(saldo)}</div>
-            {totalReservado > 0 && <div style={{ fontSize: "0.68em", color: "#F59E0B80", marginTop: 2 }}>incl. {fmtKz(totalReservado)} em obj.</div>}
+            <div style={{ ...S.heroSmall, color: saldo >= 0 ? "#C8A040" : "#EF4444" }}>{fmtKz(saldo)}</div>
           </div>
           <div style={{ textAlign: "right" }}>
-            <div style={S.heroSmallLabel}>Total gasto</div>
-            <div style={{ ...S.heroSmall, color: "#888" }}>{fmtKz(totalGasto)}</div>
-          </div>
-        </div>
-        {/* Progress bar: spending vs salary */}
-        <div style={{ marginTop: 12 }}>
-          <div style={{ height: 4, background: "rgba(255,255,255,0.05)", borderRadius: 2, overflow: "hidden" }}>
-            <div style={{ width: `${Math.min(100, salario > 0 ? (totalGasto / salario) * 100 : 0)}%`, height: "100%", background: saldo >= 0 ? "#F59E0B" : "#EF4444", borderRadius: 2, transition: "width 0.5s" }} />
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, fontSize: "0.68em", color: "#4A3A20" }}>
-            <span>0</span>
-            <span style={{ color: "#4A3A20" }}>{salario > 0 ? ((totalGasto/salario)*100).toFixed(1) : 0}% do rendimento usado</span>
-            <span>{fmtKz(salario)}</span>
+            <div style={S.heroSmallLabel}>Já gastaste</div>
+            <div style={{ ...S.heroSmall, color: "#6A6050" }}>{fmtKz(totalGasto)}</div>
           </div>
         </div>
       </div>
 
       {/* Categories */}
-      <div style={S.sectionTitle}>DISTRIBUIÇÃO {Object.values(pct).join(" · ")}</div>
+      <div style={S.sectionLabel}>DISTRIBUIÇÃO {Object.values(pct).join(" · ")}</div>
       <div style={S.categoryList}>
         {CATS.map(c => {
           const gasto = gastosPorCat[c.id];
@@ -548,7 +525,6 @@ function DashboardScreen({ state, onAddExpense, onOpenChat, onOpenCharts, onOpen
                 <span style={S.catEmoji}>{c.emoji}</span>
                 <div style={{ flex: 1 }}>
                   <div style={S.catName}>{c.label}</div>
-                  <div style={S.catDesc}>{c.desc}</div>
                 </div>
                 <div style={{ textAlign: "right" }}>
                   <div style={{ color: over ? "#EF4444" : c.color, fontWeight: 700, fontSize: "0.9em" }}>
@@ -563,9 +539,8 @@ function DashboardScreen({ state, onAddExpense, onOpenChat, onOpenCharts, onOpen
               </div>
               {over
                 ? <div style={S.overAlert}>⚠️ Excedeste em {fmtKz(totalUsado - orc)}</div>
-                : <div style={{ fontSize: "0.72em", color: "#22863A", marginTop: 6, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
-                    <span>✓</span>
-                    <span>Ainda tens <strong style={{ color: c.color }}>{fmtKz(restante)}</strong> disponíveis nesta categoria</span>
+                : <div style={{ fontSize: "0.82em", color: "#22C55E", marginTop: 8, fontWeight: 600 }}>
+                    ✓ {fmtKz(restante)} disponível
                   </div>
               }
             </div>
@@ -573,10 +548,13 @@ function DashboardScreen({ state, onAddExpense, onOpenChat, onOpenCharts, onOpen
         })}
       </div>
 
+      {/* Comunidade */}
+      <ComunidadeCounter />
+
       {/* Recent expenses */}
       {despesas.length > 0 && (
         <>
-          <div style={S.sectionTitle}>ÚLTIMAS DESPESAS</div>
+          <div style={S.sectionLabel}>ÚLTIMAS DESPESAS</div>
           <div style={S.expenseList}>
             {[...despesas].reverse().slice(0, 5).map(d => {
               const cat = CATS.find(c => c.id === d.categoria);
@@ -595,16 +573,35 @@ function DashboardScreen({ state, onAddExpense, onOpenChat, onOpenCharts, onOpen
         </>
       )}
 
-      {/* Add expense FAB */}
+      {/* Add expense FAB + acesso secundário */}
       <div style={{ padding: "0 16px 100px" }}>
         <button onClick={onAddExpense} style={S.addBtn}>+ Registar despesa</button>
+        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+          <button onClick={onOpenChat} style={{
+            flex: 1, background: "transparent", border: "1px solid #1A1A1A",
+            borderRadius: 12, padding: "12px", color: "#8A8070",
+            fontSize: "0.82em", cursor: "pointer", fontFamily: "inherit",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+          }}>
+            💬 Assistente IA
+          </button>
+          <button onClick={onOpenCharts} style={{
+            flex: 1, background: "transparent", border: "1px solid #1A1A1A",
+            borderRadius: 12, padding: "12px", color: "#8A8070",
+            fontSize: "0.82em", cursor: "pointer", fontFamily: "inherit",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+          }}>
+            📊 Ver gráficos
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
 // ── SETTINGS (edit salário, datas, percentagens) ──────────────────────────────
-function SettingsScreen({ state, onSave, onBack }) {
+function SettingsScreen({ state, onSave, onBack, onOpenConvite }) {
+  const [nome, setNome] = useState(state.nome || "");
   const [salario, setSalario] = useState(String(state.salario));
   const [dataRecebimento, setDataRecebimento] = useState(state.dataRecebimento);
   const [proximoPagamento, setProximoPagamento] = useState(state.proximoPagamento);
@@ -632,6 +629,16 @@ function SettingsScreen({ state, onSave, onBack }) {
         <div style={{ width: 60 }} />
       </div>
       <div style={{ padding: "0 16px" }}>
+        <div style={S.field}>
+          <label style={S.label}>O TEU NOME</label>
+          <input
+            type="text"
+            value={nome}
+            onChange={e => setNome(e.target.value)}
+            placeholder="O teu nome"
+            style={S.input}
+          />
+        </div>
         <div style={S.field}>
           <label style={S.label}>RENDIMENTO MENSAL (Kz)</label>
           <div style={{ ...S.inputGroup, marginTop: 0 }}>
@@ -664,7 +671,7 @@ function SettingsScreen({ state, onSave, onBack }) {
                     onChange={e => handlePct(c.id, e.target.value)}
                     style={{ width: 52, background: "#111", border: `1px solid ${c.color}60`, borderRadius: 8, padding: "5px 8px", color: c.color, fontWeight: 800, fontFamily: "inherit", outline: "none", textAlign: "center", fontSize: "0.95em" }}
                   />
-                  <span style={{ color: "#555" }}>%</span>
+                  <span style={{ color: "#8A8070" }}>%</span>
                 </div>
               </div>
               <div style={{ height: 4, background: "#1A1A1A", borderRadius: 2, overflow: "hidden" }}>
@@ -678,9 +685,13 @@ function SettingsScreen({ state, onSave, onBack }) {
           </div>
         </div>
 
-        <button disabled={!valid} onClick={() => onSave({ salario: sal, dataRecebimento, proximoPagamento, pct })}
-          style={{ ...S.btn, opacity: valid ? 1 : 0.4 }}>
+        <button disabled={!valid} onClick={() => onSave({ nome: nome.trim(), salario: sal, dataRecebimento, proximoPagamento, pct })}
+          style={{ ...S.btn, opacity: valid ? 1 : 0.4, marginBottom: 12 }}>
           Guardar alterações
+        </button>
+        <button onClick={onOpenConvite}
+          style={{ width: "100%", background: "transparent", border: "1px solid #F59E0B30", borderRadius: 14, padding: "15px", color: "#F59E0B", fontWeight: 700, fontSize: "0.95em", cursor: "pointer", fontFamily: "inherit" }}>
+          🤝 Comunidade e convites
         </button>
       </div>
     </div>
@@ -739,7 +750,7 @@ function AddExpenseScreen({ onSave, onBack, despesasAnteriores, saldoRestante })
                   border: `1px solid ${categoria === c.id ? c.color : "#1E1E1E"}`,
                   borderRadius: 12, padding: "10px 6px", cursor: "pointer", fontFamily: "inherit", transition: "all 0.2s" }}>
                 <span style={{ fontSize: "1.4em" }}>{c.emoji}</span>
-                <span style={{ fontSize: "0.68em", fontWeight: 700, color: categoria === c.id ? c.color : "#666", textAlign: "center", lineHeight: 1.2 }}>{c.label}</span>
+                <span style={{ fontSize: "0.68em", fontWeight: 700, color: categoria === c.id ? c.color : "#8A8070", textAlign: "center", lineHeight: 1.2 }}>{c.label}</span>
               </button>
             ))}
           </div>
@@ -747,7 +758,7 @@ function AddExpenseScreen({ onSave, onBack, despesasAnteriores, saldoRestante })
 
         {/* Description with suggestions */}
         <div style={S.field}>
-          <label style={S.label}>O QUE COMPRASTE?</label>
+          <label style={S.label}>O QUE GASTASTE?</label>
           <input value={descricao}
             onChange={e => { setDescricao(e.target.value); setShowSugg(true); }}
             onFocus={() => setShowSugg(true)}
@@ -757,7 +768,7 @@ function AddExpenseScreen({ onSave, onBack, despesasAnteriores, saldoRestante })
           {/* Suggestions grid */}
           {showSugg && filtered.length > 0 && (
             <div style={{ marginTop: 10 }}>
-              <div style={{ fontSize: "0.68em", color: "#444", fontWeight: 700, letterSpacing: "0.08em", marginBottom: 6 }}>
+              <div style={{ fontSize: "0.68em", color: "#6A6050", fontWeight: 700, letterSpacing: "0.08em", marginBottom: 6 }}>
                 {descricao ? "SUGESTÕES" : `COMUNS EM ${cat?.label?.toUpperCase()}`}
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -768,7 +779,7 @@ function AddExpenseScreen({ onSave, onBack, despesasAnteriores, saldoRestante })
                       border: `1px solid ${descricao === s.nome ? cat?.color : "#222"}`,
                       borderRadius: 20, padding: "6px 12px", cursor: "pointer",
                       fontFamily: "inherit", fontSize: "0.8em",
-                      color: descricao === s.nome ? cat?.color : "#888",
+                      color: descricao === s.nome ? cat?.color : "#A09880",
                       transition: "all 0.15s" }}>
                     <span>{s.emoji}</span>
                     <span>{s.nome}</span>
@@ -801,11 +812,11 @@ function AddExpenseScreen({ onSave, onBack, despesasAnteriores, saldoRestante })
           {v > 0 && (
             <div style={{ marginTop: 8 }}>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78em", marginBottom: 4 }}>
-                <span style={{ color: "#555" }}>Estás a gastar:</span>
+                <span style={{ color: "#8A8070" }}>Estás a gastar:</span>
                 <span style={{ fontWeight: 700, color: "#F59E0B" }}>{fmtKz(v)}</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78em" }}>
-                <span style={{ color: "#555" }}>Saldo após esta despesa:</span>
+                <span style={{ color: "#8A8070" }}>Saldo após esta despesa:</span>
                 <span style={{ fontWeight: 700, color: sobraAposEsta >= 0 ? "#22C55E" : "#EF4444" }}>
                   {fmtKz(sobraAposEsta)}
                 </span>
@@ -885,7 +896,7 @@ function GoalsScreen({ state, onBack, onSaveGoal, onDeleteGoal }) {
                       <span style={{ fontSize: "1.8em" }}>{obj.emoji}</span>
                       <div>
                         <div style={{ fontWeight: 700, fontSize: "0.95em", color: "#DDD" }}>{obj.nome}</div>
-                        <div style={{ fontSize: "0.72em", color: "#555", marginTop: 2 }}>{cat?.emoji} {cat?.label}</div>
+                        <div style={{ fontSize: "0.72em", color: "#8A8070", marginTop: 2 }}>{cat?.emoji} {cat?.label}</div>
                       </div>
                     </div>
                     <button onClick={() => onDeleteGoal(obj.id)}
@@ -894,7 +905,7 @@ function GoalsScreen({ state, onBack, onSaveGoal, onDeleteGoal }) {
 
                   {/* Progress bar */}
                   <div style={{ marginBottom: 10 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.72em", color: "#555", marginBottom: 6 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.72em", color: "#8A8070", marginBottom: 6 }}>
                       <span>Acumulado: <strong style={{ color: cat?.color }}>{fmtKz(obj.acumulado)}</strong></span>
                       <span>Alvo: <strong style={{ color: "#DDD" }}>{fmtKz(obj.valorAlvo)}</strong></span>
                     </div>
@@ -904,18 +915,18 @@ function GoalsScreen({ state, onBack, onSaveGoal, onDeleteGoal }) {
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.7em", marginTop: 4 }}>
                       <span style={{ color: cat?.color, fontWeight: 700 }}>{pctConcluido.toFixed(0)}% concluído</span>
-                      {mesesRestantes && <span style={{ color: "#555" }}>~{mesesRestantes} meses para atingir</span>}
+                      {mesesRestantes && <span style={{ color: "#8A8070" }}>~{mesesRestantes} meses para atingir</span>}
                     </div>
                   </div>
 
                   {/* Monthly impact */}
                   <div style={{ background: "#0A0A0A", borderRadius: 10, padding: "10px 12px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75em" }}>
-                      <span style={{ color: "#555" }}>Poupança mensal para objectivo</span>
+                      <span style={{ color: "#8A8070" }}>Poupança mensal para objectivo</span>
                       <span style={{ color: "#F59E0B", fontWeight: 700 }}>-{fmtKz(obj.poupancaMensal)}</span>
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75em", marginTop: 6 }}>
-                      <span style={{ color: "#555" }}>Disponível restante em {cat?.label}</span>
+                      <span style={{ color: "#8A8070" }}>Disponível restante em {cat?.label}</span>
                       <span style={{ fontWeight: 700, color: dispCat >= 0 ? "#22C55E" : "#EF4444" }}>{fmtKz(Math.max(0, dispCat))}</span>
                     </div>
                   </div>
@@ -987,7 +998,7 @@ function GoalsScreen({ state, onBack, onSaveGoal, onDeleteGoal }) {
                   <button key={c.id} onClick={() => setCategoria(c.id)}
                     style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, background: categoria === c.id ? `${c.color}18` : "#0A0A0A", border: `1px solid ${categoria === c.id ? c.color : "#1E1E1E"}`, borderRadius: 10, padding: "8px 4px", cursor: "pointer", fontFamily: "inherit" }}>
                     <span style={{ fontSize: "1.2em" }}>{c.emoji}</span>
-                    <span style={{ fontSize: "0.62em", fontWeight: 700, color: categoria === c.id ? c.color : "#555", textAlign: "center" }}>{c.label}</span>
+                    <span style={{ fontSize: "0.62em", fontWeight: 700, color: categoria === c.id ? c.color : "#8A8070", textAlign: "center" }}>{c.label}</span>
                   </button>
                 ))}
               </div>
@@ -995,7 +1006,7 @@ function GoalsScreen({ state, onBack, onSaveGoal, onDeleteGoal }) {
 
             <div style={{ display: "flex", gap: 10 }}>
               <button onClick={() => setShowForm(false)}
-                style={{ flex: 1, background: "transparent", border: "1px solid #222", borderRadius: 12, padding: "13px", color: "#555", cursor: "pointer", fontFamily: "inherit" }}>
+                style={{ flex: 1, background: "transparent", border: "1px solid #222", borderRadius: 12, padding: "13px", color: "#8A8070", cursor: "pointer", fontFamily: "inherit" }}>
                 Cancelar
               </button>
               <button
@@ -1015,7 +1026,7 @@ function GoalsScreen({ state, onBack, onSaveGoal, onDeleteGoal }) {
         {objectivos.length === 0 && !showForm && (
           <div style={{ textAlign: "center", padding: "32px 16px", color: "#333" }}>
             <div style={{ fontSize: "2.5em", marginBottom: 10 }}>🎯</div>
-            <div style={{ fontSize: "0.85em", color: "#555" }}>Define um objectivo e vê quanto tempo demoras a atingi-lo.</div>
+            <div style={{ fontSize: "0.85em", color: "#8A8070" }}>Define um objectivo e vê quanto tempo demoras a atingi-lo.</div>
           </div>
         )}
       </div>
@@ -1070,7 +1081,7 @@ function ChartsScreen({ state, onBack }) {
             { label: "Saldo restante", value: saldo, color: saldo >= 0 ? "#22C55E" : "#EF4444" },
           ].map((item, i) => (
             <div key={i} style={{ flex: 1, background: "#0F0F0F", border: "1px solid #1A1A1A", borderRadius: 14, padding: "14px" }}>
-              <div style={{ fontSize: "0.68em", color: "#555", fontWeight: 700, letterSpacing: "0.08em", marginBottom: 6 }}>{item.label.toUpperCase()}</div>
+              <div style={{ fontSize: "0.68em", color: "#8A8070", fontWeight: 700, letterSpacing: "0.08em", marginBottom: 6 }}>{item.label.toUpperCase()}</div>
               <div style={{ fontSize: "1.1em", fontWeight: 800, color: item.color }}>{fmtKz(item.value)}</div>
             </div>
           ))}
@@ -1112,7 +1123,7 @@ function ChartsScreen({ state, onBack }) {
                       <div style={{ height: 4, background: "#1A1A1A", borderRadius: 2, overflow: "hidden" }}>
                         <div style={{ width: `${Math.min(100, c.orcamento > 0 ? (c.gasto / c.orcamento) * 100 : 0)}%`, height: "100%", background: c.gasto > c.orcamento ? "#EF4444" : c.color, borderRadius: 2, transition: "width 0.5s" }} />
                       </div>
-                      <div style={{ fontSize: "0.7em", color: "#555", marginTop: 2 }}>
+                      <div style={{ fontSize: "0.7em", color: "#8A8070", marginTop: 2 }}>
                         {fmtKz(c.gasto)} / {fmtKz(c.orcamento)}
                       </div>
                     </div>
@@ -1134,7 +1145,7 @@ function ChartsScreen({ state, onBack }) {
                       <div key={nome} style={{ background: "#0F0F0F", border: "1px solid #1A1A1A", borderRadius: 12, padding: "12px 14px" }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <span style={{ fontSize: "0.7em", fontWeight: 800, color: "#444", minWidth: 16 }}>#{i + 1}</span>
+                            <span style={{ fontSize: "0.7em", fontWeight: 800, color: "#6A6050", minWidth: 16 }}>#{i + 1}</span>
                             <span style={{ fontSize: "0.9em", fontWeight: 600, color: "#DDD" }}>{nome}</span>
                             {cat && <span style={{ fontSize: "0.65em", background: `${cat.color}20`, color: cat.color, padding: "2px 7px", borderRadius: 10, fontWeight: 700 }}>{cat.label}</span>}
                           </div>
@@ -1143,7 +1154,7 @@ function ChartsScreen({ state, onBack }) {
                         <div style={{ height: 3, background: "#1A1A1A", borderRadius: 2, overflow: "hidden" }}>
                           <div style={{ width: `${pctBar}%`, height: "100%", background: cat?.color || "#F59E0B", borderRadius: 2 }} />
                         </div>
-                        <div style={{ fontSize: "0.68em", color: "#444", marginTop: 3 }}>{pctBar.toFixed(1)}% do total gasto</div>
+                        <div style={{ fontSize: "0.68em", color: "#6A6050", marginTop: 3 }}>{pctBar.toFixed(1)}% do total gasto</div>
                       </div>
                     );
                   })}
@@ -1152,9 +1163,9 @@ function ChartsScreen({ state, onBack }) {
             )}
           </>
         ) : (
-          <div style={{ textAlign: "center", padding: "40px 20px", color: "#444" }}>
+          <div style={{ textAlign: "center", padding: "40px 20px", color: "#6A6050" }}>
             <div style={{ fontSize: "3em", marginBottom: 12 }}>📊</div>
-            <div style={{ fontWeight: 700, color: "#666", marginBottom: 8 }}>Ainda sem dados</div>
+            <div style={{ fontWeight: 700, color: "#8A8070", marginBottom: 8 }}>Ainda sem dados</div>
             <div style={{ fontSize: "0.85em" }}>Regista as tuas primeiras despesas para ver os gráficos.</div>
           </div>
         )}
@@ -1264,7 +1275,7 @@ function ChatScreen({ state, onBack }) {
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
             {quickQ.map((q, i) => (
               <button key={i} onClick={() => send(q)}
-                style={{ background: "#0F0F0F", border: "1px solid #1E1E1E", borderRadius: 12, padding: "11px 16px", color: "#888", textAlign: "left", cursor: "pointer", fontFamily: "inherit", fontSize: "0.88em" }}>
+                style={{ background: "#0F0F0F", border: "1px solid #1E1E1E", borderRadius: 12, padding: "11px 16px", color: "#A09880", textAlign: "left", cursor: "pointer", fontFamily: "inherit", fontSize: "0.88em" }}>
                 {q}
               </button>
             ))}
@@ -1305,7 +1316,7 @@ function PreReservaBanner({ diasTrial, onReservar, onFechar }) {
     }}>
       <div style={{ fontSize: "1.3em", marginBottom: 6 }}>✅</div>
       <div style={{ fontWeight: 700, color: "#22C55E", fontSize: "0.9em" }}>Pré-reserva guardada!</div>
-      <div style={{ fontSize: "0.78em", color: "#555", marginTop: 4 }}>Vamos contactar-te quando o app estiver disponível.</div>
+      <div style={{ fontSize: "0.78em", color: "#8A8070", marginTop: 4 }}>Vamos contactar-te quando o app estiver disponível.</div>
     </div>
   );
 
@@ -1321,7 +1332,7 @@ function PreReservaBanner({ diasTrial, onReservar, onFechar }) {
     }}>
       {/* Close button — only if not urgent */}
       {!urgent && (
-        <button onClick={onFechar} style={{ position: "absolute", top: 10, right: 12, background: "transparent", border: "none", color: "#444", cursor: "pointer", fontSize: "1em" }}>✕</button>
+        <button onClick={onFechar} style={{ position: "absolute", top: 10, right: 12, background: "transparent", border: "none", color: "#6A6050", cursor: "pointer", fontSize: "1em" }}>✕</button>
       )}
 
       <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
@@ -1341,7 +1352,7 @@ function PreReservaBanner({ diasTrial, onReservar, onFechar }) {
               <div style={{ fontWeight: 700, color: "#F59E0B", fontSize: "0.88em", marginBottom: 3 }}>
                 Estás a gostar? Garante o teu lugar 🎯
               </div>
-              <div style={{ fontSize: "0.76em", color: "#666", lineHeight: 1.5 }}>
+              <div style={{ fontSize: "0.76em", color: "#8A8070", lineHeight: 1.5 }}>
                 Pré-reserva = acesso antecipado + preço especial. Ainda tens {diasTrial} dias de teste.
               </div>
             </>
@@ -1372,7 +1383,7 @@ function PreReservaBanner({ diasTrial, onReservar, onFechar }) {
                   Confirmar reserva
                 </button>
                 <button onClick={() => setExpanded(false)}
-                  style={{ background: "transparent", border: "1px solid #2A2A2A", borderRadius: 10, padding: "10px 14px", color: "#666", cursor: "pointer", fontFamily: "inherit", fontSize: "0.82em" }}>
+                  style={{ background: "transparent", border: "1px solid #2A2A2A", borderRadius: 10, padding: "10px 14px", color: "#8A8070", cursor: "pointer", fontFamily: "inherit", fontSize: "0.82em" }}>
                   Cancelar
                 </button>
               </div>
@@ -1394,7 +1405,7 @@ function TrialExpiredScreen({ onReservar }) {
       <div style={{ ...S.setupCard, textAlign: "center" }}>
         <div style={{ fontSize: "3em", marginBottom: 12 }}>🎉</div>
         <div style={S.logo}>Pré-reserva confirmada!</div>
-        <p style={{ color: "#888", fontSize: "0.9em", lineHeight: 1.6, marginTop: 12 }}>
+        <p style={{ color: "#A09880", fontSize: "0.9em", lineHeight: 1.6, marginTop: 12 }}>
           Vamos contactar-te assim que o app estiver disponível com o teu preço especial.
         </p>
       </div>
@@ -1406,7 +1417,7 @@ function TrialExpiredScreen({ onReservar }) {
       <div style={S.setupCard}>
         <div style={{ fontSize: "2.5em", marginBottom: 12 }}>⏰</div>
         <div style={{ ...S.logo, marginBottom: 8 }}>O teu teste de 14 dias terminou</div>
-        <p style={{ color: "#888", fontSize: "0.88em", lineHeight: 1.6, marginBottom: 24 }}>
+        <p style={{ color: "#A09880", fontSize: "0.88em", lineHeight: 1.6, marginBottom: 24 }}>
           Esperamos que tenhas descoberto o valor de saber exactamente quanto podes gastar por dia.<br /><br />
           Faz a pré-reserva e garante acesso quando o app lançar — com preço de fundador.
         </p>
@@ -1460,7 +1471,7 @@ function BottomNav({ active, onHome, onGoals, onSettings }) {
           }}>{t.emoji}</span>
           <span style={{
             fontSize: "0.62em", fontWeight: active === t.id ? 700 : 400,
-            color: active === t.id ? "#F59E0B" : "#444",
+            color: active === t.id ? "#F59E0B" : "#6A6050",
             letterSpacing: "0.04em",
           }}>{t.label}</span>
           {active === t.id && (
@@ -1468,6 +1479,292 @@ function BottomNav({ active, onHome, onGoals, onSettings }) {
           )}
         </button>
       ))}
+    </div>
+  );
+}
+
+// ── CONTADOR DE COMUNIDADE ───────────────────────────────────────────────────
+function ComunidadeCounter() {
+  const [count, setCount] = useState(BASE_COMMUNITY_COUNT);
+  useEffect(() => {
+    const tick = () => {
+      setCount(c => c + Math.floor(Math.random() * 2) + 1);
+      setTimeout(tick, 10000 + Math.random() * 8000);
+    };
+    const t = setTimeout(tick, 10000 + Math.random() * 8000);
+    return () => clearTimeout(t);
+  }, []);
+
+  return (
+    <div style={{
+      margin: "0 16px 20px",
+      display: "flex", alignItems: "center", justifyContent: "space-between",
+      padding: "0 4px",
+    }}>
+      <div style={{ fontSize: "0.82em", color: "#8A8070" }}>
+        {count.toLocaleString("pt-PT")} pessoas a gastar com intenção
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+        <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#22C55E", boxShadow: "0 0 4px #22C55E" }} />
+        <span style={{ fontSize: "0.75em", color: "#22C55E", fontWeight: 700 }}>ao vivo</span>
+      </div>
+    </div>
+  );
+}
+
+// ── SISTEMA DE CONVITES ───────────────────────────────────────────────────────
+function ConviteScreen({ inviteCode, inviteCount, diasAtivos, onBack }) {
+  const [copied, setCopied] = useState(false);
+  const nivel = getNivel(diasAtivos);
+  const nextNivel = NIVEIS[NIVEIS.indexOf(nivel) + 1];
+  const link = `https://app.minhasfinancas.ao/entrar?ref=${inviteCode}`;
+
+  const handleCopy = () => {
+    const msg = `Descobri este app que me diz exactamente quanto posso gastar hoje — sem culpa, sem restrições. Experimenta: ${link}`;
+    navigator.clipboard?.writeText(msg).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  };
+
+  const handleWhatsApp = () => {
+    const msg = encodeURIComponent(`Descobri este app que me diz exactamente quanto posso gastar hoje — sem culpa, sem restrições. Experimenta: ${link}`);
+    window.open(`https://wa.me/?text=${msg}`, "_blank");
+  };
+
+  return (
+    <div style={S.screen}>
+      <div style={S.topBar}>
+        <button onClick={onBack} style={S.backBtn}>← Voltar</button>
+        <div style={S.screenTitle}>Convida amigos</div>
+        <div style={{ width: 60 }} />
+      </div>
+      <div style={{ padding: "0 16px 32px" }}>
+
+        {/* Nível actual */}
+        <div style={{
+          background: "linear-gradient(135deg,#1C1400,#0F0C00)",
+          border: "1px solid rgba(245,158,11,0.25)",
+          borderRadius: 20, padding: "22px 20px", marginBottom: 20, textAlign: "center",
+        }}>
+          <div style={{ fontSize: "3em", marginBottom: 8 }}>{nivel.emoji}</div>
+          <div style={{ fontSize: "0.65em", fontWeight: 700, letterSpacing: "0.12em", color: "#F59E0B80", marginBottom: 4 }}>
+            O TEU NÍVEL
+          </div>
+          <div style={{ fontSize: "1.4em", fontWeight: 800, color: "#F59E0B" }}>{nivel.label}</div>
+          <div style={{ fontSize: "0.78em", color: "#8A8070", marginTop: 6, lineHeight: 1.5 }}>{nivel.desc}</div>
+          {nextNivel && (
+            <div style={{ marginTop: 14, fontSize: "0.72em", color: "#6A6050" }}>
+              Próximo nível: <span style={{ color: "#F59E0B80" }}>{nextNivel.emoji} {nextNivel.label}</span> em {nextNivel.dias - diasAtivos} dias
+            </div>
+          )}
+        </div>
+
+        {/* Convites feitos */}
+        {inviteCount > 0 && (
+          <div style={{
+            background: "#0A1A0A", border: "1px solid #22C55E30",
+            borderRadius: 14, padding: "14px 16px", marginBottom: 20,
+            display: "flex", alignItems: "center", gap: 12,
+          }}>
+            <div style={{ fontSize: "1.8em" }}>🤝</div>
+            <div>
+              <div style={{ fontWeight: 700, color: "#22C55E", fontSize: "0.9em" }}>
+                {inviteCount} amigo{inviteCount !== 1 ? "s" : ""} já entraram pelo teu convite
+              </div>
+              <div style={{ fontSize: "0.72em", color: "#8A8070", marginTop: 3 }}>
+                Obrigado por cresceres esta comunidade
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* O que partilhas */}
+        <div style={{ fontSize: "0.68em", fontWeight: 700, letterSpacing: "0.1em", color: "#6A6050", marginBottom: 10 }}>
+          A MENSAGEM QUE PARTILHAS
+        </div>
+        <div style={{
+          background: "#0F0F0F", border: "1px solid #1E1E1E",
+          borderRadius: 14, padding: "16px", marginBottom: 16,
+        }}>
+          <div style={{ fontSize: "0.88em", color: "#A09880", lineHeight: 1.6 }}>
+            "Descobri este app que me diz exactamente quanto posso gastar hoje — sem culpa, sem restrições."
+          </div>
+          <div style={{ marginTop: 10, fontSize: "0.75em", color: "#6A6050", fontFamily: "monospace", wordBreak: "break-all" }}>
+            {link}
+          </div>
+        </div>
+
+        {/* Botões de partilha */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <button onClick={handleWhatsApp} style={{
+            background: "#25D366", border: "none", borderRadius: 14,
+            padding: "15px", color: "#000", fontWeight: 800, fontSize: "0.95em",
+            cursor: "pointer", fontFamily: "inherit", display: "flex",
+            alignItems: "center", justifyContent: "center", gap: 8,
+          }}>
+            <span style={{ fontSize: "1.2em" }}>📱</span> Partilhar no WhatsApp
+          </button>
+          <button onClick={handleCopy} style={{
+            background: copied ? "#22C55E15" : "#0F0F0F",
+            border: `1px solid ${copied ? "#22C55E40" : "#2A2A2A"}`,
+            borderRadius: 14, padding: "15px",
+            color: copied ? "#22C55E" : "#A09880", fontWeight: 700, fontSize: "0.9em",
+            cursor: "pointer", fontFamily: "inherit",
+          }}>
+            {copied ? "✓ Copiado!" : "Copiar mensagem"}
+          </button>
+        </div>
+
+        {/* Todos os níveis */}
+        <div style={{ marginTop: 28 }}>
+          <div style={{ fontSize: "0.68em", fontWeight: 700, letterSpacing: "0.1em", color: "#6A6050", marginBottom: 12 }}>
+            OS NÍVEIS DA COMUNIDADE
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {NIVEIS.map(n => {
+              const atingido = diasAtivos >= n.dias;
+              return (
+                <div key={n.id} style={{
+                  display: "flex", alignItems: "center", gap: 12,
+                  background: atingido ? "#0F0F0F" : "transparent",
+                  border: `1px solid ${atingido ? "#2A2A2A" : "#111"}`,
+                  borderRadius: 12, padding: "12px 14px",
+                  opacity: atingido ? 1 : 0.4,
+                }}>
+                  <span style={{ fontSize: "1.5em" }}>{n.emoji}</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 700, fontSize: "0.88em", color: atingido ? "#DDD" : "#8A8070" }}>{n.label}</div>
+                    <div style={{ fontSize: "0.7em", color: "#6A6050", marginTop: 2 }}>{n.desc}</div>
+                  </div>
+                  <div style={{ fontSize: "0.7em", color: atingido ? "#22C55E" : "#333", fontWeight: 700 }}>
+                    {atingido ? "✓" : `${n.dias}d`}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── MODAL DE CONQUISTA ────────────────────────────────────────────────────────
+function ConquistaModal({ nivel, diasAtivos, onPartilhar, onFechar }) {
+  const handleWhatsApp = () => {
+    const msgs = [
+      `Dia ${diasAtivos} a gastar com intenção. Sem surpresas no fim do mês. 💪`,
+      `${diasAtivos} dias e o dinheiro ainda está no lugar certo. 🔥`,
+      `Nível ${nivel.label} desbloqueado. ${diasAtivos} dias a saber exactamente o que posso gastar. ${nivel.emoji}`,
+    ];
+    const msg = encodeURIComponent(msgs[Math.floor(Math.random() * msgs.length)]);
+    window.open(`https://wa.me/?text=${msg}`, "_blank");
+    onFechar();
+  };
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)",
+      display: "flex", alignItems: "flex-end", justifyContent: "center",
+      zIndex: 200, animation: "slideUp 0.3s ease",
+    }}>
+      <div style={{
+        width: "100%", maxWidth: 480,
+        background: "linear-gradient(160deg,#0F0C00,#080808)",
+        border: "1px solid rgba(245,158,11,0.3)",
+        borderRadius: "24px 24px 0 0",
+        padding: "32px 24px 40px",
+        textAlign: "center",
+      }}>
+        <div style={{ fontSize: "4em", marginBottom: 12, animation: "pulse 1.5s infinite" }}>{nivel.emoji}</div>
+        <div style={{ fontSize: "0.65em", fontWeight: 700, letterSpacing: "0.14em", color: "#F59E0B80", marginBottom: 6 }}>
+          NÍVEL DESBLOQUEADO
+        </div>
+        <div style={{ fontSize: "1.8em", fontWeight: 800, color: "#F59E0B", marginBottom: 8 }}>{nivel.label}</div>
+        <div style={{ fontSize: "0.88em", color: "#A09880", lineHeight: 1.6, marginBottom: 24 }}>{nivel.desc}</div>
+
+        <div style={{ background: "#0A0A0A", border: "1px solid #1A1A1A", borderRadius: 14, padding: "14px", marginBottom: 20 }}>
+          <div style={{ fontSize: "0.78em", color: "#8A8070", marginBottom: 4 }}>A TUA CONQUISTA</div>
+          <div style={{ fontSize: "0.95em", color: "#E8E0D0", fontWeight: 600 }}>
+            {diasAtivos} dia{diasAtivos !== 1 ? "s" : ""} a gastar com intenção
+          </div>
+          <div style={{ fontSize: "0.82em", color: "#8A8070", marginTop: 4 }}>sem revelar valores · sem culpa · sem surpresas</div>
+        </div>
+
+        <div style={{ fontSize: "0.88em", color: "#8A8070", marginBottom: 16, textAlign: "center" }}>
+          Partilha a conquista — sem expor o teu dinheiro.
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <button onClick={handleWhatsApp} style={{
+            background: "#25D366", border: "none", borderRadius: 14, padding: "17px",
+            color: "#000", fontWeight: 800, fontSize: "0.95em", cursor: "pointer", fontFamily: "inherit",
+          }}>
+            Partilhar no WhatsApp 📱
+          </button>
+          <button onClick={onFechar} style={{
+            background: "transparent", border: "none", color: "#6A6050",
+            fontSize: "0.88em", cursor: "pointer", fontFamily: "inherit", padding: "10px",
+          }}>
+            Agora não
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── MODAL CONVITE PÓS-PRIMEIRA-DESPESA ───────────────────────────────────────
+function ConviteMomentoModal({ inviteCode, onFechar }) {
+  const link = `https://app.minhasfinancas.ao/entrar?ref=${inviteCode}`;
+
+  const handleWhatsApp = () => {
+    const msg = encodeURIComponent(
+      `Descobri este app que me diz exactamente quanto posso gastar hoje — sem culpa, sem restrições. Experimenta: ${link}`
+    );
+    window.open(`https://wa.me/?text=${msg}`, "_blank");
+    onFechar();
+  };
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)",
+      display: "flex", alignItems: "flex-end", justifyContent: "center",
+      zIndex: 200, animation: "slideUp 0.3s ease",
+    }}>
+      <div style={{
+        width: "100%", maxWidth: 480,
+        background: "#0D0D0D",
+        border: "1px solid #1A1A1A",
+        borderRadius: "24px 24px 0 0",
+        padding: "32px 24px 44px",
+      }}>
+        {/* Pergunta simples, sem pressão */}
+        <div style={{ fontSize: "2em", marginBottom: 16, textAlign: "center" }}>🤝</div>
+        <div style={{ fontSize: "1.2em", fontWeight: 800, color: "#E8E0D0", marginBottom: 10, lineHeight: 1.3 }}>
+          Conheces alguém que precisava de saber isto?
+        </div>
+        <div style={{ fontSize: "0.92em", color: "#8A8070", lineHeight: 1.6, marginBottom: 28 }}>
+          A maioria das pessoas não sabe quanto pode gastar hoje. Tu já sabes. Partilha com alguém que importa.
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <button onClick={handleWhatsApp} style={{
+            background: "#25D366", border: "none", borderRadius: 14,
+            padding: "17px", color: "#000", fontWeight: 800,
+            fontSize: "0.95em", cursor: "pointer", fontFamily: "inherit",
+          }}>
+            Partilhar no WhatsApp 📱
+          </button>
+          <button onClick={onFechar} style={{
+            background: "transparent", border: "none",
+            color: "#6A6050", fontSize: "0.88em",
+            cursor: "pointer", fontFamily: "inherit", padding: "10px",
+          }}>
+            Agora não
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1483,10 +1780,15 @@ const INIT = {
   proximoPagamento: addMonths(todayStr(), 1),
   pct: { ...DEFAULT_PCT },
   despesas: [],
-  objectivos: [],        // list of savings goals
+  objectivos: [],
   setupDate: null,
   reservas: [],
   bannerDismissed: false,
+  nome: "",
+  inviteCode: generateInviteCode(),
+  inviteCount: 0,
+  conquistaMostrada: false,
+  conviteDiasMostrados: [],
 };
 
 export default function App() {
@@ -1502,7 +1804,7 @@ export default function App() {
 
   const handleSetupDone = (data) => {
     setState(prev => ({ ...prev, ...data, setup: true, setupDate: todayStr() }));
-    setScreen("validation");
+    setScreen("dashboard");
   };
 
   const handleSettingsSave = (data) => {
@@ -1511,9 +1813,29 @@ export default function App() {
   };
 
   const handleAddExpense = (expense) => {
-    setState(prev => ({ ...prev, despesas: [...prev.despesas, expense] }));
+    const isPrimeiraDespesa = state.despesas.length === 0;
+    const jaViuHoje = state.conviteDiasMostrados?.includes(trialDaysUsed);
+    // Dias em que o convite proactivo aparece: dia 0 (1ª despesa), dia 3
+    // Dia 7 é coberto pelo ConquistaModal (nível Consciente)
+    const diaDeConvite = (isPrimeiraDespesa && trialDaysUsed === 0) ||
+                         (trialDaysUsed === 3 && !jaViuHoje);
+    const antesDoBanner = trialDaysUsed < BANNER_FROM_DAY;
+
+    setState(prev => ({
+      ...prev,
+      despesas: [...prev.despesas, expense],
+      // Regista que o convite foi mostrado neste dia
+      conviteDiasMostrados: diaDeConvite && antesDoBanner
+        ? [...(prev.conviteDiasMostrados || []), trialDaysUsed]
+        : prev.conviteDiasMostrados || [],
+    }));
+
     if (showBannerEligible) setShowBanner(true);
     setScreen("dashboard");
+
+    if (diaDeConvite && antesDoBanner) {
+      setTimeout(() => setConviteMomento(true), 700);
+    }
   };
 
   const handleSaveGoal = (goal) => {
@@ -1527,6 +1849,22 @@ export default function App() {
   const handleReservar = (email) => {
     setState(prev => ({ ...prev, reservas: [...prev.reservas, { email, date: todayStr() }] }));
   };
+
+  // Conquista: mostra modal quando utilizador atinge novo nível
+  const diasAtivos = state.setupDate ? daysSince(state.setupDate) : 0;
+  const nivelAtual = getNivel(diasAtivos);
+  const [conquistaVista, setConquistaVista] = useState(false);
+  const [conquistaModal, setConquistaModal] = useState(false);
+  const [conviteMomento, setConviteMomento] = useState(false); // modal após 1ª despesa
+
+  useEffect(() => {
+    if (!state.setup) return;
+    const marcos = NIVEIS.map(n => n.dias);
+    if (marcos.includes(diasAtivos) && !conquistaVista) {
+      setConquistaModal(true);
+      setConquistaVista(true);
+    }
+  }, [diasAtivos, state.setup]);
 
   // If trial expired, show expired screen
   if (trialExpired && screen !== "setup" && screen !== "validation") {
@@ -1544,7 +1882,7 @@ export default function App() {
   }
 
   // Which tabs show the bottom nav
-  const showNav = ["dashboard","goals","settings","charts","chat"].includes(screen);
+  const showNav = ["dashboard","goals","settings","charts","chat","convite"].includes(screen);
   const navActive = ["goals","settings"].includes(screen) ? screen : "dashboard";
 
   return (
@@ -1572,11 +1910,12 @@ export default function App() {
             onOpenCharts={() => setScreen("charts")}
             onOpenGoals={() => setScreen("goals")}
             onSettings={() => setScreen("settings")}
+            onOpenConvite={() => setScreen("convite")}
           />
           {/* Trial countdown chip always visible from day 4 */}
           {showBannerEligible && (
             <div style={{ padding: "0 16px 8px", marginTop: -8 }}>
-              <div style={{ fontSize: "0.72em", color: trialDaysLeft <= 2 ? "#EF4444" : "#555", textAlign: "center" }}>
+              <div style={{ fontSize: "0.72em", color: trialDaysLeft <= 2 ? "#EF4444" : "#8A8070", textAlign: "center" }}>
                 {trialDaysLeft <= 2
                   ? `⏳ Teste termina em ${trialDaysLeft} dia${trialDaysLeft !== 1 ? "s" : ""}`
                   : `⏱ Versão de teste — ${trialDaysLeft} dias restantes`}
@@ -1593,13 +1932,32 @@ export default function App() {
           )}
         </>
       )}
-      {screen === "settings"   && <SettingsScreen state={state} onSave={handleSettingsSave} onBack={() => setScreen("dashboard")} />}
+      {screen === "settings"   && <SettingsScreen state={state} onSave={handleSettingsSave} onBack={() => setScreen("dashboard")} onOpenConvite={() => setScreen("convite")} />}
+      {screen === "convite"     && <ConviteScreen inviteCode={state.inviteCode} inviteCount={state.inviteCount} diasAtivos={diasAtivos} onBack={() => setScreen("dashboard")} />}
       {screen === "add"        && <AddExpenseScreen onSave={handleAddExpense} onBack={() => setScreen("dashboard")}
                                     despesasAnteriores={state.despesas}
                                     saldoRestante={state.salario - state.despesas.reduce((s,d) => s+d.valor, 0)} />}
       {screen === "goals"      && <GoalsScreen state={state} onBack={() => setScreen("dashboard")} onSaveGoal={handleSaveGoal} onDeleteGoal={handleDeleteGoal} />}
       {screen === "charts"     && <ChartsScreen state={state} onBack={() => setScreen("dashboard")} />}
       {screen === "chat"       && <ChatScreen state={state} onBack={() => setScreen("dashboard")} />}
+
+      {/* Modal de conquista — dias 1, 7, 14, 30, 60 */}
+      {conquistaModal && !conviteMomento && (
+        <ConquistaModal
+          nivel={nivelAtual}
+          diasAtivos={diasAtivos}
+          onPartilhar={() => setConquistaModal(false)}
+          onFechar={() => setConquistaModal(false)}
+        />
+      )}
+
+      {/* Momento de convite — após primeira despesa */}
+      {conviteMomento && (
+        <ConviteMomentoModal
+          inviteCode={state.inviteCode}
+          onFechar={() => setConviteMomento(false)}
+        />
+      )}
 
       {/* Bottom Navigation */}
       {showNav && (
@@ -1614,74 +1972,81 @@ export default function App() {
   );
 }
 
+// ── PALETA ────────────────────────────────────────────────────────────────────
+// Âmbar #F59E0B · Preto #080808 · Verde #22C55E · Areia #E8E0D0 · Vermelho #EF4444
+// Regra: 80% preto, 15% âmbar, 5% verde/areia
+
 // ── STYLES ────────────────────────────────────────────────────────────────────
 const S = {
   app: { minHeight: "100vh", background: "#080808", fontFamily: "'Plus Jakarta Sans', sans-serif", color: "#E8E0D0", maxWidth: 480, margin: "0 auto" },
   screen: { minHeight: "100vh", overflowY: "auto", paddingBottom: 100, animation: "slideUp 0.25s ease" },
 
   // Setup
-  setup: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, background: "linear-gradient(160deg,#0A0A0A 60%,#12100A)" },
-  setupCard: { width: "100%", maxWidth: 400, background: "#0F0F0F", border: "1px solid #1E1E1E", borderRadius: 24, padding: "32px 24px" },
-  logo: { fontSize: "1.25em", fontWeight: 800, color: "#F59E0B", marginBottom: 20, letterSpacing: "-0.02em" },
-  stepDots: { display: "flex", gap: 6, marginBottom: 24, alignItems: "center" },
-  setupTitle: { fontSize: "1.25em", fontWeight: 700, color: "#F0ECE4", lineHeight: 1.3, marginBottom: 6 },
-  setupSub: { fontSize: "0.85em", color: "#666", lineHeight: 1.5 },
-  inputGroup: { display: "flex", alignItems: "center", gap: 10, background: "#0A0A0A", border: "1px solid #2A2A2A", borderRadius: 14, padding: "10px 16px", marginTop: 8 },
-  currency: { fontSize: "1.1em", color: "#F59E0B", fontWeight: 700 },
-  bigInput: { flex: 1, background: "transparent", border: "none", outline: "none", fontSize: "1.8em", fontWeight: 800, color: "#F0ECE4", fontFamily: "inherit", width: "100%" },
-  dateInput: { width: "100%", background: "#0A0A0A", border: "1px solid #2A2A2A", borderRadius: 12, padding: "14px 16px", color: "#F0ECE4", fontSize: "0.95em", fontFamily: "inherit", outline: "none", marginTop: 4 },
-  dateTip: { fontSize: "0.78em", color: "#555", marginTop: 10, textAlign: "center" },
-  preview: { marginTop: 18, display: "flex", flexDirection: "column", gap: 10 },
-  previewRow: { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.88em" },
-  btn: { width: "100%", background: "#F59E0B", border: "none", borderRadius: 14, padding: "15px", color: "#000", fontSize: "0.95em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
-  backBtnSetup: { background: "#0A0A0A", border: "1px solid #2A2A2A", borderRadius: 14, padding: "15px 18px", color: "#888", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, fontSize: "0.9em" },
+  setup: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, background: "#080808" },
+  setupCard: { width: "100%", maxWidth: 400, background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: 24, padding: "36px 28px" },
+  logo: { fontSize: "1.15em", fontWeight: 800, color: "#F59E0B", marginBottom: 24, letterSpacing: "-0.02em" },
+  stepDots: { display: "flex", gap: 6, marginBottom: 28, alignItems: "center" },
+  setupTitle: { fontSize: "1.3em", fontWeight: 700, color: "#E8E0D0", lineHeight: 1.3, marginBottom: 8 },
+  setupSub: { fontSize: "0.9em", color: "#8A8070", lineHeight: 1.6 },
+  inputGroup: { display: "flex", alignItems: "center", gap: 12, background: "#080808", border: "1px solid #222", borderRadius: 16, padding: "12px 18px", marginTop: 12 },
+  currency: { fontSize: "1em", color: "#F59E0B", fontWeight: 700 },
+  bigInput: { flex: 1, background: "transparent", border: "none", outline: "none", fontSize: "2em", fontWeight: 800, color: "#E8E0D0", fontFamily: "inherit", width: "100%" },
+  dateInput: { width: "100%", background: "#080808", border: "1px solid #222", borderRadius: 12, padding: "16px 18px", color: "#E8E0D0", fontSize: "1em", fontFamily: "inherit", outline: "none", marginTop: 6 },
+  dateTip: { fontSize: "0.82em", color: "#6A6050", marginTop: 10, textAlign: "center" },
+  preview: { marginTop: 20, display: "flex", flexDirection: "column", gap: 12 },
+  previewRow: { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.92em" },
+  btn: { width: "100%", background: "#F59E0B", border: "none", borderRadius: 14, padding: "17px", color: "#000", fontSize: "1em", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", letterSpacing: "-0.01em" },
+  backBtnSetup: { background: "#080808", border: "1px solid #222", borderRadius: 14, padding: "17px 20px", color: "#8A8070", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, fontSize: "0.95em" },
 
   // Validation
-  valQuestion: { marginBottom: 20 },
-  valQ: { fontSize: "0.9em", color: "#CCC", lineHeight: 1.5, marginBottom: 10 },
-  valOptions: { display: "flex", flexDirection: "column", gap: 8 },
-  valOption: { background: "#0A0A0A", border: "1px solid #1E1E1E", borderRadius: 12, padding: "12px 16px", cursor: "pointer", fontFamily: "inherit", fontSize: "0.88em", textAlign: "left", transition: "all 0.2s" },
-  valLabel: { fontSize: "0.75em", fontWeight: 700, letterSpacing: "0.08em", color: "#555", display: "block", marginBottom: 4 },
+  valQuestion: { marginBottom: 24 },
+  valQ: { fontSize: "0.95em", color: "#C8C0B0", lineHeight: 1.6, marginBottom: 12 },
+  valOptions: { display: "flex", flexDirection: "column", gap: 10 },
+  valOption: { background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: 14, padding: "14px 18px", cursor: "pointer", fontFamily: "inherit", fontSize: "0.95em", textAlign: "left", transition: "all 0.2s" },
+  valLabel: { fontSize: "0.8em", fontWeight: 700, letterSpacing: "0.08em", color: "#6A6050", display: "block", marginBottom: 6 },
 
   // Dashboard
-  header: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 20px 10px" },
-  headerSub: { fontSize: "0.7em", color: "#3A3A3A", marginTop: 2 },
-  iconBtn: { background: "transparent", border: "1px solid #1E1E1E", borderRadius: 10, padding: "8px 12px", color: "#555", cursor: "pointer", fontSize: "0.9em" },
-  heroCard: { margin: "0 16px 18px", background: "linear-gradient(135deg,#1C1400,#0F0C00)", border: "1px solid rgba(245,158,11,0.2)", borderRadius: 20, padding: "24px 22px" },
-  heroLabel: { fontSize: "0.65em", fontWeight: 700, letterSpacing: "0.12em", color: "#F59E0B", marginBottom: 6 },
-  heroAmount: { fontSize: "2.4em", fontWeight: 800, color: "#F59E0B", letterSpacing: "-0.02em", lineHeight: 1 },
-  heroSub: { fontSize: "0.8em", color: "#7A6A40", marginTop: 5 },
-  heroDivider: { height: 1, background: "rgba(245,158,11,0.1)", margin: "18px 0" },
+  header: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "24px 20px 14px" },
+  headerSub: { fontSize: "0.75em", color: "#8A8070", marginTop: 3, letterSpacing: "0.04em" },
+  iconBtn: { background: "transparent", border: "none", borderRadius: 10, padding: "8px", color: "#2A2A2A", cursor: "pointer", fontSize: "1.1em" },
+
+  // Hero — O número que liberta
+  heroCard: { margin: "0 16px 24px", background: "linear-gradient(160deg,#141000,#0A0800)", border: "1px solid rgba(245,158,11,0.15)", borderRadius: 24, padding: "32px 24px" },
+  heroLabel: { fontSize: "0.72em", fontWeight: 700, letterSpacing: "0.14em", color: "#8A7040", marginBottom: 10 },
+  heroAmount: { fontSize: "3.2em", fontWeight: 800, color: "#F59E0B", letterSpacing: "-0.03em", lineHeight: 1 },
+  heroSub: { fontSize: "0.88em", color: "#6A5030", marginTop: 10 },
+  heroDivider: { height: 1, background: "rgba(245,158,11,0.08)", margin: "20px 0" },
   heroRow: { display: "flex", justifyContent: "space-between" },
-  heroSmallLabel: { fontSize: "0.68em", color: "#5A4A30", marginBottom: 3 },
-  heroSmall: { fontSize: "0.95em", fontWeight: 700, color: "#C8A040" },
-  sectionTitle: { fontSize: "0.68em", fontWeight: 700, letterSpacing: "0.1em", color: "#3A3A3A", padding: "0 20px", marginBottom: 10 },
-  categoryList: { display: "flex", flexDirection: "column", gap: 10, padding: "0 16px", marginBottom: 18 },
-  categoryCard: { background: "#0F0F0F", border: "1px solid #1A1A1A", borderRadius: 14, padding: "14px" },
-  catHeader: { display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 10 },
-  catEmoji: { fontSize: "1.4em", lineHeight: 1 },
-  catName: { fontSize: "0.88em", fontWeight: 700, color: "#DDD", marginBottom: 2 },
-  catDesc: { fontSize: "0.7em", color: "#555" },
-  catLimit: { fontSize: "0.7em", color: "#444", marginTop: 2 },
-  barBg: { height: 5, background: "#1A1A1A", borderRadius: 3, overflow: "hidden" },
-  barFill: { height: "100%", borderRadius: 3, transition: "width 0.5s ease" },
-  overAlert: { fontSize: "0.72em", color: "#EF4444", marginTop: 7, fontWeight: 600 },
-  expenseList: { padding: "0 16px", marginBottom: 18, display: "flex", flexDirection: "column", gap: 8 },
-  expenseRow: { display: "flex", alignItems: "center", gap: 10, background: "#0F0F0F", border: "1px solid #1A1A1A", borderRadius: 12, padding: "11px 14px" },
-  expEmoji: { fontSize: "1.2em" },
-  expDesc: { fontSize: "0.88em", fontWeight: 600, color: "#DDD" },
-  expDate: { fontSize: "0.7em", color: "#555", marginTop: 2 },
-  actions: { display: "flex", gap: 10, padding: "0 16px" },
-  addBtn: { flex: 1, background: "#F59E0B", border: "none", borderRadius: 14, padding: "15px", color: "#000", fontWeight: 700, fontSize: "0.92em", cursor: "pointer", fontFamily: "inherit" },
-  chatBtn: { background: "#0F0F0F", border: "1px solid #2A2A2A", borderRadius: 14, padding: "15px 18px", color: "#DDD", fontWeight: 600, fontSize: "0.92em", cursor: "pointer", fontFamily: "inherit" },
+  heroSmallLabel: { fontSize: "0.75em", color: "#6A5030", marginBottom: 4 },
+  heroSmall: { fontSize: "1em", fontWeight: 700, color: "#C8A040" },
+
+  // Categories
+  sectionLabel: { fontSize: "0.75em", fontWeight: 700, letterSpacing: "0.1em", color: "#6A6050", padding: "0 20px", marginBottom: 12 },
+  categoryList: { display: "flex", flexDirection: "column", gap: 8, padding: "0 16px", marginBottom: 24 },
+  categoryCard: { background: "#0D0D0D", border: "1px solid #161616", borderRadius: 16, padding: "16px" },
+  catHeader: { display: "flex", alignItems: "center", gap: 12, marginBottom: 12 },
+  catEmoji: { fontSize: "1.3em", lineHeight: 1 },
+  catName: { fontSize: "0.95em", fontWeight: 700, color: "#E8E0D0" },
+  catLimit: { fontSize: "0.82em", color: "#6A6050", marginTop: 2 },
+  barBg: { height: 4, background: "#161616", borderRadius: 2, overflow: "hidden" },
+  barFill: { height: "100%", borderRadius: 2, transition: "width 0.5s ease" },
+  overAlert: { fontSize: "0.82em", color: "#EF4444", marginTop: 8, fontWeight: 600 },
+
+  // Expenses
+  expenseList: { padding: "0 16px", marginBottom: 20, display: "flex", flexDirection: "column", gap: 6 },
+  expenseRow: { display: "flex", alignItems: "center", gap: 12, background: "#0D0D0D", border: "1px solid #161616", borderRadius: 14, padding: "13px 16px" },
+  expEmoji: { fontSize: "1.1em" },
+  expDesc: { fontSize: "0.92em", fontWeight: 600, color: "#E8E0D0" },
+  expDate: { fontSize: "0.78em", color: "#6A6050", marginTop: 2 },
+  addBtn: { flex: 1, background: "#F59E0B", border: "none", borderRadius: 14, padding: "17px", color: "#000", fontWeight: 800, fontSize: "0.95em", cursor: "pointer", fontFamily: "inherit" },
 
   // Shared
-  topBar: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 16px 14px" },
-  backBtn: { background: "transparent", border: "1px solid #1E1E1E", borderRadius: 10, padding: "8px 14px", color: "#777", cursor: "pointer", fontFamily: "inherit", fontSize: "0.84em" },
-  screenTitle: { fontSize: "0.95em", fontWeight: 700, color: "#DDD" },
-  field: { marginBottom: 18 },
-  label: { fontSize: "0.7em", fontWeight: 700, letterSpacing: "0.08em", color: "#555", marginBottom: 6, display: "block" },
-  input: { width: "100%", background: "#0F0F0F", border: "1px solid #1E1E1E", borderRadius: 12, padding: "13px 16px", color: "#E8E0D0", fontSize: "0.95em", fontFamily: "inherit", outline: "none" },
-  inputPrefix: { position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: "#F59E0B", fontWeight: 700 },
-  aiAvatar: { width: 32, height: 32, background: "linear-gradient(135deg,#F59E0B,#92640A)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.9em", flexShrink: 0, marginRight: 8, marginTop: 2 },
+  topBar: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 16px 16px" },
+  backBtn: { background: "transparent", border: "1px solid #1A1A1A", borderRadius: 10, padding: "9px 16px", color: "#8A8070", cursor: "pointer", fontFamily: "inherit", fontSize: "0.88em" },
+  screenTitle: { fontSize: "1em", fontWeight: 700, color: "#E8E0D0" },
+  field: { marginBottom: 20 },
+  label: { fontSize: "0.78em", fontWeight: 700, letterSpacing: "0.08em", color: "#8A8070", marginBottom: 8, display: "block" },
+  input: { width: "100%", background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: 12, padding: "15px 18px", color: "#E8E0D0", fontSize: "1em", fontFamily: "inherit", outline: "none" },
+  inputPrefix: { position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "#F59E0B", fontWeight: 700 },
+  aiAvatar: { width: 34, height: 34, background: "linear-gradient(135deg,#F59E0B,#7A5A00)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.95em", flexShrink: 0, marginRight: 10, marginTop: 2 },
 };
