@@ -1,17 +1,29 @@
-export default async function handler(req, res) {
-  // Evitar métodos que não sejam POST
+export const config = {
+  runtime: 'edge', // Usa o Edge Runtime para evitar problemas de compatibilidade com o CRA
+};
+
+export default async function handler(req) {
+  // 1. Bloquear métodos que não sejam POST
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Método não permitido' });
+    return new Response(JSON.stringify({ error: 'Método não permitido' }), {
+      status: 405,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 
   try {
-    const { system, messages } = req.body;
+    // 2. Extrair os dados do body com a API padrão do Edge (req.json())
+    const { system, messages } = await req.json();
     const apiKey = process.env.REACT_APP_ANTHROPIC_KEY;
 
     if (!apiKey) {
-      return res.status(500).json({ error: 'Chave API não configurada no painel da Vercel.' });
+      return new Response(JSON.stringify({ error: 'Chave API não configurada na Vercel.' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
+    // 3. Fazer a chamada à API da Anthropic
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -28,10 +40,18 @@ export default async function handler(req, res) {
     });
 
     const data = await response.json();
-    return res.status(response.status).json(data);
+
+    // 4. Retornar a resposta para o React
+    return new Response(JSON.stringify(data), {
+      status: response.status,
+      headers: { 'Content-Type': 'application/json' },
+    });
 
   } catch (error) {
-    console.error("Erro no proxy:", error);
-    return res.status(500).json({ error: 'Erro interno no servidor proxy' });
+    console.error("Erro no proxy Edge:", error);
+    return new Response(JSON.stringify({ error: 'Erro interno no servidor proxy' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 }
