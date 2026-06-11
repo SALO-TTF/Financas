@@ -38,9 +38,6 @@ const CATS = [
 ];
 
 // ── COMUNIDADE & CONQUISTAS ───────────────────────────────────────────────────
-// Contador base simulado — em produção viria de uma API/base de dados
-const BASE_COMMUNITY_COUNT = 8347;
-
 // Gera código de convite único por sessão (em produção seria por utilizador autenticado)
 const generateInviteCode = () => {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -110,7 +107,7 @@ const SUGESTOES = {
 
 // ── AI ────────────────────────────────────────────────────────────────────────
 async function askAI(messages, userData) {
-  const system = `És um assistente financeiro chamado "Minhas Finanças".
+  const system = `És um assistente financeiro chamado "Klaco".
 Falas português europeu. És directo, empático e prático. Nunca julgas.
 
 DADOS DO UTILIZADOR:
@@ -146,6 +143,7 @@ function SetupScreen({ onComplete }) {
   const [salarioDisplay, setSalarioDisplay] = useState("");
   const [dataRecebimento, setDataRecebimento] = useState(todayStr());
   const [proximoPagamento, setProximoPagamento] = useState("");
+  const [semEntradaInicial, setSemEntradaInicial] = useState(false); // começou agora
 
   const handleSalarioChange = (raw) => {
     const digits = raw.replace(/\D/g, "");
@@ -156,7 +154,9 @@ function SetupScreen({ onComplete }) {
   };
 
   const sal = parseFloat(salario) || 0;
-  const datasValidas = !!dataRecebimento && !!proximoPagamento && proximoPagamento > todayStr();
+  const datasValidas = semEntradaInicial
+    ? (!!proximoPagamento && proximoPagamento > todayStr())
+    : (!!dataRecebimento && !!proximoPagamento && proximoPagamento > todayStr());
   const primeiroNome = nome.trim().split(" ")[0];
 
   const steps = [
@@ -235,13 +235,29 @@ function SetupScreen({ onComplete }) {
       valid: datasValidas,
       body: (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {/* Toggle: começou agora? */}
+          <button
+            onClick={() => setSemEntradaInicial(v => !v)}
+            style={{
+              display: "flex", alignItems: "center", gap: 10, background: "#0A0A0A",
+              border: `1px solid ${semEntradaInicial ? "#F59E0B" : "#222"}`, borderRadius: 12,
+              padding: "12px 14px", cursor: "pointer", fontFamily: "inherit", textAlign: "left",
+            }}>
+            <div style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${semEntradaInicial ? "#F59E0B" : "#444"}`, background: semEntradaInicial ? "#F59E0B" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              {semEntradaInicial && <span style={{ color: "#000", fontWeight: 800, fontSize: "0.8em" }}>✓</span>}
+            </div>
+            <span style={{ fontSize: "0.85em", color: "#E8E0D0" }}>Comecei agora — ainda não recebi nenhum pagamento</span>
+          </button>
+
+          {!semEntradaInicial && (
+            <div>
+              <label style={S.label}>ÚLTIMO PAGAMENTO</label>
+              <input type="date" value={dataRecebimento}
+                onChange={e => setDataRecebimento(e.target.value)} style={S.dateInput} />
+            </div>
+          )}
           <div>
-            <label style={S.label}>ÚLTIMO PAGAMENTO</label>
-            <input type="date" value={dataRecebimento}
-              onChange={e => setDataRecebimento(e.target.value)} style={S.dateInput} />
-          </div>
-          <div>
-            <label style={S.label}>PRÓXIMO PAGAMENTO</label>
+            <label style={S.label}>{semEntradaInicial ? "QUANDO RECEBES O PRIMEIRO PAGAMENTO" : "PRÓXIMO PAGAMENTO"}</label>
             <input type="date" value={proximoPagamento}
               onChange={e => setProximoPagamento(e.target.value)} style={S.dateInput} />
             {proximoPagamento && proximoPagamento <= todayStr() && (
@@ -251,10 +267,16 @@ function SetupScreen({ onComplete }) {
             )}
             {datasValidas && (
               <div style={{ fontSize: "0.82em", color: "#22C55E", marginTop: 8 }}>
-                ✓ {daysUntil(proximoPagamento)} dias até ao próximo pagamento
+                ✓ {daysUntil(proximoPagamento)} dias até ao pagamento
               </div>
             )}
           </div>
+
+          {semEntradaInicial && (
+            <div style={{ background: "#141000", border: "1px solid #2A2010", borderRadius: 12, padding: "12px 14px", fontSize: "0.82em", color: "#C8C0B0", lineHeight: 1.55 }}>
+              🌅 Como ainda não recebeste, vamos calcular o teu dia a dia a partir do teu primeiro pagamento. Até lá, o teu número será associado a essa data.
+            </div>
+          )}
         </div>
       ),
     },
@@ -265,7 +287,7 @@ function SetupScreen({ onComplete }) {
   return (
     <div style={S.setup}>
       <div style={S.setupCard}>
-        <div style={S.logo}>💰 Minhas Finanças</div>
+        <div style={S.logo}>☀️ Klaco</div>
 
         {/* Dots de progresso — visíveis */}
         <div style={S.stepDots}>
@@ -313,7 +335,7 @@ function SetupScreen({ onComplete }) {
             disabled={!cur.valid}
             onClick={() => {
               if (step < steps.length - 1) setStep(step + 1);
-              else onComplete({ nome: nome.trim(), salario: sal, dataRecebimento, proximoPagamento, pct: { ...DEFAULT_PCT } });
+              else onComplete({ nome: nome.trim(), salario: sal, dataRecebimento, proximoPagamento, pct: { ...DEFAULT_PCT }, semEntradaInicial });
             }}
             style={{ ...S.btn, opacity: cur.valid ? 1 : 0.35, flex: 1 }}
           >
@@ -325,105 +347,19 @@ function SetupScreen({ onComplete }) {
   );
 }
 
-// ── VALIDATION SCREEN (Kaufman pre-test) ──────────────────────────────────────
-function ValidationScreen({ onDone }) {
-  const [bankSync, setBankSync] = useState(null);    // "sim" | "nao" | null
-  const [reserva, setReserva] = useState(null);       // "sim" | "nao" | null
-  const [email, setEmail] = useState("");
-  const [submitted, setSubmitted] = useState(false);
-
-  const canSubmit = bankSync !== null && reserva !== null;
-
-  if (submitted) {
-    return (
-      <div style={S.setup}>
-        <div style={{ ...S.setupCard, textAlign: "center" }}>
-          <div style={{ fontSize: "3em", marginBottom: 16 }}>🎉</div>
-          <div style={{ fontSize: "1.3em", fontWeight: 800, color: "#E8E0D0", marginBottom: 10 }}>Obrigado!</div>
-          <p style={{ color: "#8A8070", fontSize: "0.92em", lineHeight: 1.6, marginBottom: 24 }}>
-            {reserva === "sim" ? "Reserva garantida. Vamos contactar-te antes de toda a gente." : "O teu feedback vai melhorar o app para toda a gente."}
-          </p>
-          <button onClick={onDone} style={S.btn}>Entrar no app →</button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div style={S.setup}>
-      <div style={S.setupCard}>
-        <div style={S.logo}>💰 Minhas Finanças</div>
-        <div style={{ marginBottom: 24 }}>
-          <div style={{ fontSize: "1.2em", fontWeight: 800, color: "#E8E0D0", marginBottom: 8, lineHeight: 1.3 }}>
-            Já usaste o app uma semana. A tua opinião importa.
-          </div>
-          <div style={{ fontSize: "0.9em", color: "#8A8070", lineHeight: 1.6 }}>
-            Duas perguntas rápidas para melhorarmos o que estás a usar.
-          </div>
-        </div>
-
-        {/* Question 1 */}
-        <div style={S.valQuestion}>
-          <p style={S.valQ}>📱 Gostavas que o app registasse os teus gastos automaticamente, sem teres de escrever cada despesa?</p>
-          <div style={S.valOptions}>
-            {["sim", "nao"].map(v => (
-              <button key={v} onClick={() => setBankSync(v)}
-                style={{ ...S.valOption, borderColor: bankSync === v ? "#F59E0B" : "#1E1E1E", background: bankSync === v ? "#F59E0B15" : "#0A0A0A", color: bankSync === v ? "#F59E0B" : "#A09880" }}>
-                {v === "sim" ? "✅ Sim, com certeza!" : "❌ Prefiro inserir eu"}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Question 2 */}
-        <div style={S.valQuestion}>
-          <p style={S.valQ}>🚀 O app vai ter um plano mensal. Queres garantir o teu lugar agora, com preço especial de fundador?</p>
-          <div style={S.valOptions}>
-            {["sim", "nao"].map(v => (
-              <button key={v} onClick={() => setReserva(v)}
-                style={{ ...S.valOption, borderColor: reserva === v ? "#22C55E" : "#1E1E1E", background: reserva === v ? "#22C55E15" : "#0A0A0A", color: reserva === v ? "#22C55E" : "#A09880" }}>
-                {v === "sim" ? "✅ Quero reservar!" : "❌ Só quero testar"}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Email if reserva sim */}
-        {reserva === "sim" && (
-          <div style={{ marginBottom: 16 }}>
-            <label style={S.valLabel}>O teu e-mail ou telemóvel (para te contactarmos)</label>
-            <input
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="exemplo@gmail.com ou +244 9XX XXX XXX"
-              style={{ ...S.dateInput, marginTop: 6 }}
-            />
-          </div>
-        )}
-
-        <button
-          disabled={!canSubmit}
-          onClick={() => setSubmitted(true)}
-          style={{ ...S.btn, opacity: canSubmit ? 1 : 0.4, marginTop: 4 }}
-        >
-          {reserva === "sim" ? "Guardar pré-reserva 🎯" : "Continuar para o app →"}
-        </button>
-
-        <button onClick={onDone} style={{ width: "100%", background: "transparent", border: "none", color: "#6A6050", fontSize: "0.82em", marginTop: 12, cursor: "pointer", fontFamily: "inherit" }}>
-          Saltar esta etapa
-        </button>
-      </div>
-    </div>
-  );
-}
-
 // ── DASHBOARD ─────────────────────────────────────────────────────────────────
-function DashboardScreen({ state, onAddExpense, onOpenChat, onOpenCharts, onOpenGoals, onOpenConvite }) {
-  const { salario, dataRecebimento, proximoPagamento, despesas, pct, objectivos = [] } = state;
+function DashboardScreen({ state, onAddExpense, onAddEntrada, onVerDespesas, onVerEntradas, onOpenChat, onOpenCharts, onOpenGoals, onOpenConvite }) {
+  const { salario, dataRecebimento, proximoPagamento, despesas, pct, objectivos = [], entradasExtra = [], semEntradaInicial = false } = state;
+  const [showAddMenu, setShowAddMenu] = useState(false);
+
+  // Entradas extra (13º, bónus, subsídios) deste período somam ao rendimento
+  const totalExtra = entradasExtra.reduce((s, e) => s + (e.valor || 0), 0);
+  const rendimentoPeriodo = salario + totalExtra;
 
   // Period: dataRecebimento → proximoPagamento
+  // Se o utilizador começou agora (sem entrada inicial), o período conta a partir de hoje
   const diasRestantes = daysUntil(proximoPagamento);
-  const diasPassados = daysSince(dataRecebimento);
+  const diasPassados = semEntradaInicial ? 0 : daysSince(dataRecebimento);
   const diasPeriodo = diasRestantes + diasPassados;
 
   // Despesas por categoria
@@ -443,14 +379,14 @@ function DashboardScreen({ state, onAddExpense, onOpenChat, onOpenCharts, onOpen
   const totalReservado = Object.values(reservadoPorCat).reduce((a, b) => a + b, 0);
 
   // Daily rate based on FULL period
-  const taxaDiaria = diasPeriodo > 0 ? salario / diasPeriodo : salario;
+  const taxaDiaria = diasPeriodo > 0 ? rendimentoPeriodo / diasPeriodo : rendimentoPeriodo;
   const orcamentoRestante = taxaDiaria * diasRestantes;
 
   // Saldo real = salary - expenses - goals reserved
   const totalComprometido = totalGasto + totalReservado;
   const saldoAjustado = orcamentoRestante - totalComprometido;
   const gastoDiario = diasRestantes > 0 ? saldoAjustado / diasRestantes : saldoAjustado;
-  const saldo = salario - totalComprometido;
+  const saldo = rendimentoPeriodo - totalComprometido;
 
   // Context: are we on track?
   const gastoEsperadoAteHoje = taxaDiaria * diasPassados;
@@ -468,7 +404,7 @@ function DashboardScreen({ state, onAddExpense, onOpenChat, onOpenCharts, onOpen
           <div style={S.logo}>
             {state.nome
               ? `Olá, ${state.nome.split(" ")[0]} 👋`
-              : "💰 Minhas Finanças"}
+              : "☀️ Klaco"}
           </div>
           <div style={S.headerSub}>o teu dinheiro. a tua liberdade.</div>
         </div>
@@ -548,13 +484,13 @@ function DashboardScreen({ state, onAddExpense, onOpenChat, onOpenCharts, onOpen
         })}
       </div>
 
-      {/* Comunidade */}
-      <ComunidadeCounter />
-
-      {/* Recent expenses */}
+      {/* Últimas despesas com "ver todas" */}
       {despesas.length > 0 && (
         <>
-          <div style={S.sectionLabel}>ÚLTIMAS DESPESAS</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0 20px", marginBottom: 12 }}>
+            <span style={{ ...S.sectionLabel, padding: 0, marginBottom: 0 }}>ÚLTIMAS DESPESAS</span>
+            <button onClick={onVerDespesas} style={{ background: "transparent", border: "none", color: "#F59E0B", fontSize: "0.8em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Ver todas →</button>
+          </div>
           <div style={S.expenseList}>
             {[...despesas].reverse().slice(0, 5).map(d => {
               const cat = CATS.find(c => c.id === d.categoria);
@@ -573,9 +509,48 @@ function DashboardScreen({ state, onAddExpense, onOpenChat, onOpenCharts, onOpen
         </>
       )}
 
-      {/* Add expense FAB + acesso secundário */}
+      {/* Entradas extra com "ver todas" */}
+      {entradasExtra.length > 0 && (
+        <>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0 20px", marginBottom: 12, marginTop: 4 }}>
+            <span style={{ ...S.sectionLabel, padding: 0, marginBottom: 0 }}>OUTRAS ENTRADAS</span>
+            <button onClick={onVerEntradas} style={{ background: "transparent", border: "none", color: "#F59E0B", fontSize: "0.8em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Ver todas →</button>
+          </div>
+          <div style={S.expenseList}>
+            {[...entradasExtra].reverse().slice(0, 3).map(e => (
+              <div key={e.id || e.nome} style={S.expenseRow}>
+                <span style={S.expEmoji}>💰</span>
+                <div style={{ flex: 1 }}>
+                  <div style={S.expDesc}>{e.nome}</div>
+                  <div style={S.expDate}>{e.data}</div>
+                </div>
+                <div style={{ color: "#22C55E", fontWeight: 600 }}>+{fmtKz(e.valor)}</div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* Botão único com lista pendente: Despesa ou Entrada */}
       <div style={{ padding: "0 16px 100px" }}>
-        <button onClick={onAddExpense} style={S.addBtn}>+ Registar despesa</button>
+        {!showAddMenu ? (
+          <button onClick={() => setShowAddMenu(true)} style={S.addBtn}>+ Adicionar</button>
+        ) : (
+          <div style={{ background: "#0D0D0D", border: "1px solid #F59E0B40", borderRadius: 14, overflow: "hidden", animation: "slideUp 0.2s ease" }}>
+            <button onClick={() => { setShowAddMenu(false); onAddExpense(); }}
+              style={{ width: "100%", background: "transparent", border: "none", borderBottom: "1px solid #1A1A1A", padding: "16px", color: "#E8E0D0", fontWeight: 700, fontSize: "0.95em", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 10, textAlign: "left" }}>
+              <span style={{ fontSize: "1.2em" }}>🛒</span> Registar uma despesa
+            </button>
+            <button onClick={() => { setShowAddMenu(false); onAddEntrada(); }}
+              style={{ width: "100%", background: "transparent", border: "none", borderBottom: "1px solid #1A1A1A", padding: "16px", color: "#E8E0D0", fontWeight: 700, fontSize: "0.95em", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 10, textAlign: "left" }}>
+              <span style={{ fontSize: "1.2em" }}>💰</span> Adicionar uma entrada (salário extra, 13º, bónus)
+            </button>
+            <button onClick={() => setShowAddMenu(false)}
+              style={{ width: "100%", background: "transparent", border: "none", padding: "13px", color: "#8A8070", fontSize: "0.85em", cursor: "pointer", fontFamily: "inherit" }}>
+              Cancelar
+            </button>
+          </div>
+        )}
         <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
           <button onClick={onOpenChat} style={{
             flex: 1, background: "transparent", border: "1px solid #1A1A1A",
@@ -606,6 +581,14 @@ function SettingsScreen({ state, onSave, onBack, onOpenConvite }) {
   const [dataRecebimento, setDataRecebimento] = useState(state.dataRecebimento);
   const [proximoPagamento, setProximoPagamento] = useState(state.proximoPagamento);
   const [pct, setPct] = useState({ ...state.pct });
+  const [guardado, setGuardado] = useState(false);
+
+  // Número de WhatsApp da empresa
+  const WHATSAPP_SUPORTE = "244923933353";
+  const abrirSuporte = () => {
+    const msg = encodeURIComponent("Olá! Preciso de ajuda com a Klaco: ");
+    window.open(`https://wa.me/${WHATSAPP_SUPORTE}?text=${msg}`, "_blank");
+  };
 
   // Simple independent control — allow clearing to retype
   const handlePct = (id, raw) => {
@@ -685,10 +668,37 @@ function SettingsScreen({ state, onSave, onBack, onOpenConvite }) {
           </div>
         </div>
 
-        <button disabled={!valid} onClick={() => onSave({ nome: nome.trim(), salario: sal, dataRecebimento, proximoPagamento, pct })}
+        <button disabled={!valid} onClick={() => { onSave({ nome: nome.trim(), salario: sal, dataRecebimento, proximoPagamento, pct }); setGuardado(true); setTimeout(() => setGuardado(false), 2600); }}
           style={{ ...S.btn, opacity: valid ? 1 : 0.4, marginBottom: 12 }}>
           Guardar alterações
         </button>
+        {guardado && (
+          <div style={{ background: "#0A1A0A", border: "1px solid #22C55E40", borderRadius: 12, padding: "12px 16px", marginBottom: 12, animation: "slideUp 0.2s ease", display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: "1.1em" }}>✓</span>
+            <span style={{ fontSize: "0.86em", color: "#22C55E", fontWeight: 600 }}>Guardado. O teu número já reflete as alterações.</span>
+          </div>
+        )}
+
+        {/* NOTIFICAÇÕES — lembrete diário de hábito */}
+        <div style={{ background: "#0A0A0A", border: "1px solid #1A1A1A", borderRadius: 12, padding: "14px 16px", marginBottom: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div>
+              <div style={{ fontSize: "0.9em", fontWeight: 700, color: "#E8E0D0" }}>🔔 Lembrete diário</div>
+              <div style={{ fontSize: "0.78em", color: "#8A8070", marginTop: 2 }}>«Sabe quanto podes gastar hoje 🌅»</div>
+            </div>
+            {/* [DEV] Ligar ao sistema de notificações push do backend */}
+            <div style={{ width: 44, height: 26, borderRadius: 13, background: "#F59E0B", position: "relative", cursor: "pointer" }}>
+              <div style={{ position: "absolute", top: 3, right: 3, width: 20, height: 20, borderRadius: "50%", background: "#000" }} />
+            </div>
+          </div>
+        </div>
+
+        {/* SUPORTE — WhatsApp */}
+        <button onClick={abrirSuporte}
+          style={{ width: "100%", background: "#25D366", border: "none", borderRadius: 14, padding: "15px", color: "#000", fontWeight: 800, fontSize: "0.95em", cursor: "pointer", fontFamily: "inherit", marginBottom: 12 }}>
+          💬 Suporte e dúvidas (WhatsApp)
+        </button>
+
         <button onClick={onOpenConvite}
           style={{ width: "100%", background: "transparent", border: "1px solid #F59E0B30", borderRadius: 14, padding: "15px", color: "#F59E0B", fontWeight: 700, fontSize: "0.95em", cursor: "pointer", fontFamily: "inherit" }}>
           🤝 Comunidade e convites
@@ -1202,7 +1212,7 @@ function ChatScreen({ state, onBack }) {
 
   const [messages, setMessages] = useState([{
     role: "assistant",
-    content: `Olá! Sou o assistente de **Minhas Finanças** 💰\n\nVejo que tens **${fmtKz(saldo)}** disponíveis e **${dias} dias** até ao próximo pagamento. Podes gastar até **${fmtKz(Math.max(0, dias > 0 ? saldo / dias : saldo))} por dia** em segurança.\n\nO que queres saber?`,
+    content: `Olá! Sou o assistente da **Klaco** ☀️\n\nVejo que tens **${fmtKz(saldo)}** disponíveis e **${dias} dias** até ao próximo pagamento. Podes gastar até **${fmtKz(Math.max(0, dias > 0 ? saldo / dias : saldo))} por dia** em segurança.\n\nO que queres saber?`,
   }]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -1299,141 +1309,53 @@ function ChatScreen({ state, onBack }) {
 }
 
 // ── PRÉ-RESERVA BANNER (shown after saving expense from day 4 onwards) ─────────
-function PreReservaBanner({ diasTrial, onReservar, onFechar }) {
-  const [email, setEmail] = useState("");
-  const [expanded, setExpanded] = useState(false);
-  const [done, setDone] = useState(false);
-  const urgent = diasTrial <= 2;
-
-  if (done) return (
-    <div style={{
-      margin: "0 16px 16px",
-      background: "#0A1A0A",
-      border: "1px solid #22C55E40",
-      borderRadius: 16,
-      padding: "16px",
-      animation: "slideUp 0.3s ease",
-    }}>
-      <div style={{ fontSize: "1.3em", marginBottom: 6 }}>✅</div>
-      <div style={{ fontWeight: 700, color: "#22C55E", fontSize: "0.9em" }}>Pré-reserva guardada!</div>
-      <div style={{ fontSize: "0.78em", color: "#8A8070", marginTop: 4 }}>Vamos contactar-te quando o app estiver disponível.</div>
-    </div>
-  );
-
-  return (
-    <div style={{
-      margin: "0 16px 16px",
-      background: urgent ? "linear-gradient(135deg,#1A0800,#120600)" : "linear-gradient(135deg,#12100A,#0C0A06)",
-      border: `1px solid ${urgent ? "#EF444440" : "#F59E0B30"}`,
-      borderRadius: 16,
-      padding: "14px 16px",
-      animation: "slideUp 0.3s ease",
-      position: "relative",
-    }}>
-      {/* Close button — only if not urgent */}
-      {!urgent && (
-        <button onClick={onFechar} style={{ position: "absolute", top: 10, right: 12, background: "transparent", border: "none", color: "#6A6050", cursor: "pointer", fontSize: "1em" }}>✕</button>
-      )}
-
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-        <span style={{ fontSize: "1.4em", lineHeight: 1 }}>{urgent ? "⏳" : "🚀"}</span>
-        <div style={{ flex: 1 }}>
-          {urgent ? (
-            <>
-              <div style={{ fontWeight: 800, color: "#EF4444", fontSize: "0.9em", marginBottom: 4 }}>
-                Teste termina em {diasTrial} dia{diasTrial !== 1 ? "s" : ""}!
-              </div>
-              <div style={{ fontSize: "0.78em", color: "#999", lineHeight: 1.5 }}>
-                Não percas o teu histórico. Faz a pré-reserva e garante acesso antecipado com preço especial.
-              </div>
-            </>
-          ) : (
-            <>
-              <div style={{ fontWeight: 700, color: "#F59E0B", fontSize: "0.88em", marginBottom: 3 }}>
-                Estás a gostar? Garante o teu lugar 🎯
-              </div>
-              <div style={{ fontSize: "0.76em", color: "#8A8070", lineHeight: 1.5 }}>
-                Pré-reserva = acesso antecipado + preço especial. Ainda tens {diasTrial} dias de teste.
-              </div>
-            </>
-          )}
-
-          {!expanded ? (
-            <button onClick={() => setExpanded(true)} style={{
-              marginTop: 10, background: urgent ? "#EF4444" : "#F59E0B",
-              border: "none", borderRadius: 10, padding: "9px 16px",
-              color: "#000", fontWeight: 700, fontSize: "0.82em",
-              cursor: "pointer", fontFamily: "inherit",
-            }}>
-              Quero pré-reservar →
-            </button>
-          ) : (
-            <div style={{ marginTop: 10 }}>
-              <input
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder="E-mail ou telemóvel (+244...)"
-                style={{ width: "100%", background: "#0A0A0A", border: "1px solid #2A2A2A", borderRadius: 10, padding: "10px 12px", color: "#E8E0D0", fontSize: "0.84em", fontFamily: "inherit", outline: "none", marginBottom: 8 }}
-              />
-              <div style={{ display: "flex", gap: 8 }}>
-                <button
-                  disabled={!email.trim()}
-                  onClick={() => { onReservar(email); setDone(true); }}
-                  style={{ flex: 1, background: "#F59E0B", border: "none", borderRadius: 10, padding: "10px", color: "#000", fontWeight: 700, fontSize: "0.82em", cursor: "pointer", fontFamily: "inherit", opacity: email.trim() ? 1 : 0.4 }}>
-                  Confirmar reserva
-                </button>
-                <button onClick={() => setExpanded(false)}
-                  style={{ background: "transparent", border: "1px solid #2A2A2A", borderRadius: 10, padding: "10px 14px", color: "#8A8070", cursor: "pointer", fontFamily: "inherit", fontSize: "0.82em" }}>
-                  Cancelar
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── TRIAL EXPIRED SCREEN ───────────────────────────────────────────────────────
-function TrialExpiredScreen({ onReservar }) {
-  const [email, setEmail] = useState("");
-  const [done, setDone] = useState(false);
-
-  if (done) return (
-    <div style={S.setup}>
-      <div style={{ ...S.setupCard, textAlign: "center" }}>
-        <div style={{ fontSize: "3em", marginBottom: 12 }}>🎉</div>
-        <div style={S.logo}>Pré-reserva confirmada!</div>
-        <p style={{ color: "#A09880", fontSize: "0.9em", lineHeight: 1.6, marginTop: 12 }}>
-          Vamos contactar-te assim que o app estiver disponível com o teu preço especial.
-        </p>
-      </div>
-    </div>
-  );
+// ── TRIAL EXPIRED SCREEN — Pagamento ─────────────────────────────────────────
+function TrialExpiredScreen() {
+  // [DEV] Substituir pelos dados reais de pagamento por referência
+  const REFERENCIA_PAGAMENTO = "[referência de pagamento aqui]";
+  const ENTIDADE = "[entidade aqui]";
+  const VALOR = "500 Kz";
 
   return (
     <div style={S.setup}>
       <div style={S.setupCard}>
-        <div style={{ fontSize: "2.5em", marginBottom: 12 }}>⏰</div>
-        <div style={{ ...S.logo, marginBottom: 8 }}>O teu teste de 14 dias terminou</div>
-        <p style={{ color: "#A09880", fontSize: "0.88em", lineHeight: 1.6, marginBottom: 24 }}>
-          Esperamos que tenhas descoberto o valor de saber exactamente quanto podes gastar por dia.<br /><br />
-          Faz a pré-reserva e garante acesso quando o app lançar — com preço de fundador.
+        <div style={{ fontSize: "2.5em", marginBottom: 12 }}>🔓</div>
+        <div style={{ ...S.logo, marginBottom: 8 }}>Os teus 14 dias terminaram</div>
+        <p style={{ color: "#A09880", fontSize: "0.92em", lineHeight: 1.6, marginBottom: 8 }}>
+          Já sabes o que é abrir o telemóvel e saber exactamente quanto podes gastar hoje.
         </p>
-        <div style={S.field}>
-          <label style={S.label}>O TEU E-MAIL OU TELEMÓVEL</label>
-          <input value={email} onChange={e => setEmail(e.target.value)}
-            placeholder="+244 9XX XXX XXX ou email@gmail.com"
-            style={S.dateInput} />
+        <p style={{ color: "#E8E0D0", fontSize: "0.95em", lineHeight: 1.6, marginBottom: 28, fontWeight: 600 }}>
+          Continua a gastar sem culpa por apenas {VALOR} por mês.
+        </p>
+
+        {/* Dados de pagamento por referência */}
+        <div style={{ background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: 16, padding: "20px", marginBottom: 20 }}>
+          <div style={{ fontSize: "0.78em", fontWeight: 700, letterSpacing: "0.08em", color: "#8A8070", marginBottom: 14 }}>
+            PAGA POR REFERÊNCIA
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <span style={{ color: "#8A8070", fontSize: "0.88em" }}>Entidade</span>
+            <span style={{ color: "#E8E0D0", fontSize: "1em", fontWeight: 700, fontFamily: "monospace" }}>{ENTIDADE}</span>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <span style={{ color: "#8A8070", fontSize: "0.88em" }}>Referência</span>
+            <span style={{ color: "#E8E0D0", fontSize: "1em", fontWeight: 700, fontFamily: "monospace" }}>{REFERENCIA_PAGAMENTO}</span>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 12, borderTop: "1px solid #1A1A1A" }}>
+            <span style={{ color: "#8A8070", fontSize: "0.88em" }}>Valor</span>
+            <span style={{ color: "#F59E0B", fontSize: "1.2em", fontWeight: 800 }}>{VALOR}</span>
+          </div>
         </div>
-        <button disabled={!email.trim()} onClick={() => { onReservar(email); setDone(true); }}
-          style={{ ...S.btn, opacity: email.trim() ? 1 : 0.4 }}>
-          Garantir o meu lugar 🚀
+
+        <div style={{ fontSize: "0.85em", color: "#8A8070", lineHeight: 1.6, textAlign: "center", marginBottom: 20 }}>
+          Paga pela app do teu banco, Multicaixa Express ou ATM. O acesso é reactivado automaticamente após o pagamento.
+        </div>
+
+        {/* [DEV] Botão opcional: link directo de pagamento se a gateway suportar */}
+        <button style={{ ...S.btn }}
+          onClick={() => { /* [DEV] abrir link de pagamento da gateway aqui */ }}>
+          Já paguei — reactivar acesso
         </button>
-        <div style={{ textAlign: "center", fontSize: "0.75em", color: "#333", marginTop: 16 }}>
-          Sem spam. Apenas o contacto de lançamento.
-        </div>
       </div>
     </div>
   );
@@ -1479,35 +1401,6 @@ function BottomNav({ active, onHome, onGoals, onSettings }) {
           )}
         </button>
       ))}
-    </div>
-  );
-}
-
-// ── CONTADOR DE COMUNIDADE ───────────────────────────────────────────────────
-function ComunidadeCounter() {
-  const [count, setCount] = useState(BASE_COMMUNITY_COUNT);
-  useEffect(() => {
-    const tick = () => {
-      setCount(c => c + Math.floor(Math.random() * 2) + 1);
-      setTimeout(tick, 10000 + Math.random() * 8000);
-    };
-    const t = setTimeout(tick, 10000 + Math.random() * 8000);
-    return () => clearTimeout(t);
-  }, []);
-
-  return (
-    <div style={{
-      margin: "0 16px 20px",
-      display: "flex", alignItems: "center", justifyContent: "space-between",
-      padding: "0 4px",
-    }}>
-      <div style={{ fontSize: "0.82em", color: "#8A8070" }}>
-        {count.toLocaleString("pt-PT")} pessoas a gastar com intenção
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-        <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#22C55E", boxShadow: "0 0 4px #22C55E" }} />
-        <span style={{ fontSize: "0.75em", color: "#22C55E", fontWeight: 700 }}>ao vivo</span>
-      </div>
     </div>
   );
 }
@@ -1769,9 +1662,216 @@ function ConviteMomentoModal({ inviteCode, onFechar }) {
   );
 }
 
+// ── ADICIONAR ENTRADA (salário extra, 13º, bónus, subsídio) ──────────────────
+function AddEntradaScreen({ onSave, onBack }) {
+  const [nome, setNome] = useState("");
+  const [valor, setValor] = useState("");
+  const [valorDisplay, setValorDisplay] = useState("");
+  const [data, setData] = useState(todayStr());
+
+  const handleValor = (raw) => {
+    const digits = raw.replace(/\D/g, "");
+    setValor(digits);
+    setValorDisplay(digits === "" ? "" : String(parseInt(digits,10)).replace(/\B(?=(\d{3})+(?!\d))/g, "."));
+  };
+
+  const atalhos = ["13º mês", "Bónus", "Subsídio de férias", "Subsídio de Natal", "Trabalho extra"];
+  const v = parseFloat(valor) || 0;
+  const valido = nome.trim().length > 0 && v > 0;
+
+  return (
+    <div style={S.screen}>
+      <div style={S.topBar}>
+        <button onClick={onBack} style={S.backBtn}>← Voltar</button>
+        <div style={S.screenTitle}>Nova entrada</div>
+        <div style={{ width: 60 }} />
+      </div>
+      <div style={{ padding: "0 16px" }}>
+        <div style={{ fontSize: "0.86em", color: "#8A8070", marginBottom: 20, lineHeight: 1.5 }}>
+          Recebeste algo além do salário? Adiciona aqui — entra no que podes gastar este período. 🌅
+        </div>
+
+        <div style={S.field}>
+          <label style={S.label}>O QUE RECEBESTE?</label>
+          <input type="text" value={nome} onChange={e => setNome(e.target.value)}
+            placeholder="Ex: 13º mês" style={S.input} />
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
+            {atalhos.map(a => (
+              <button key={a} onClick={() => setNome(a)}
+                style={{ background: nome === a ? "#F59E0B20" : "#0F0F0F", border: `1px solid ${nome === a ? "#F59E0B" : "#1E1E1E"}`, borderRadius: 20, padding: "7px 13px", color: nome === a ? "#F59E0B" : "#8A8070", fontSize: "0.8em", cursor: "pointer", fontFamily: "inherit" }}>
+                {a}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={S.field}>
+          <label style={S.label}>VALOR (Kz)</label>
+          <div style={{ ...S.inputGroup, marginTop: 0 }}>
+            <span style={S.currency}>Kz</span>
+            <input type="text" inputMode="numeric" value={valorDisplay} onChange={e => handleValor(e.target.value)}
+              placeholder="0" style={S.bigInput} />
+          </div>
+        </div>
+
+        <div style={S.field}>
+          <label style={S.label}>DATA</label>
+          <input type="date" value={data} onChange={e => setData(e.target.value)} style={S.dateInput} />
+        </div>
+
+        <button disabled={!valido}
+          onClick={() => onSave({ id: Date.now(), nome: nome.trim(), valor: v, data })}
+          style={{ ...S.btn, opacity: valido ? 1 : 0.4 }}>
+          Adicionar entrada
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── EDITAR UM MOVIMENTO (despesa ou entrada) ─────────────────────────────────
+function EditMovimentoModal({ tipo, item, onSave, onDelete, onClose }) {
+  const isDespesa = tipo === "despesa";
+  const [nome, setNome] = useState(isDespesa ? item.descricao : item.nome);
+  const [valor, setValor] = useState(String(item.valor));
+  const [data, setData] = useState(item.data || todayStr());
+  const v = parseFloat(String(valor).replace(/\D/g, "")) || 0;
+  const valido = nome.trim().length > 0 && v > 0;
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 200, animation: "slideUp 0.25s ease" }}>
+      <div style={{ width: "100%", maxWidth: 480, background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: "24px 24px 0 0", padding: "28px 24px 40px" }}>
+        <div style={{ fontSize: "1.1em", fontWeight: 800, color: "#E8E0D0", marginBottom: 20 }}>
+          Editar {isDespesa ? "despesa" : "entrada"}
+        </div>
+        <div style={S.field}>
+          <label style={S.label}>{isDespesa ? "DESCRIÇÃO" : "NOME"}</label>
+          <input type="text" value={nome} onChange={e => setNome(e.target.value)} style={S.input} />
+        </div>
+        <div style={S.field}>
+          <label style={S.label}>VALOR (Kz)</label>
+          <input type="number" value={valor} onChange={e => setValor(e.target.value)} style={S.input} />
+        </div>
+        <div style={S.field}>
+          <label style={S.label}>DATA</label>
+          <input type="date" value={data} onChange={e => setData(e.target.value)} style={S.dateInput} />
+        </div>
+        <button disabled={!valido}
+          onClick={() => { onSave(isDespesa ? { descricao: nome.trim(), valor: v, data } : { nome: nome.trim(), valor: v, data }); onClose(); }}
+          style={{ ...S.btn, opacity: valido ? 1 : 0.4, marginBottom: 10 }}>
+          Guardar
+        </button>
+        <button onClick={() => { onDelete(); onClose(); }}
+          style={{ width: "100%", background: "transparent", border: "1px solid #EF444440", borderRadius: 14, padding: "14px", color: "#EF4444", fontWeight: 700, fontSize: "0.9em", cursor: "pointer", fontFamily: "inherit", marginBottom: 8 }}>
+          Apagar
+        </button>
+        <button onClick={onClose}
+          style={{ width: "100%", background: "transparent", border: "none", color: "#8A8070", fontSize: "0.85em", cursor: "pointer", fontFamily: "inherit", padding: "6px" }}>
+          Cancelar
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── TODAS AS DESPESAS ────────────────────────────────────────────────────────
+function AllDespesasScreen({ despesas, onEdit, onDelete, onBack }) {
+  const [editing, setEditing] = useState(null);
+  const total = despesas.reduce((s, d) => s + d.valor, 0);
+  return (
+    <div style={S.screen}>
+      <div style={S.topBar}>
+        <button onClick={onBack} style={S.backBtn}>← Voltar</button>
+        <div style={S.screenTitle}>Todas as despesas</div>
+        <div style={{ width: 60 }} />
+      </div>
+      <div style={{ padding: "0 16px" }}>
+        <div style={{ background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: 14, padding: "16px", marginBottom: 18, textAlign: "center" }}>
+          <div style={{ fontSize: "0.75em", color: "#8A8070", marginBottom: 4 }}>TOTAL GASTO</div>
+          <div style={{ fontSize: "1.6em", fontWeight: 800, color: "#EF4444" }}>{fmtKz(total)}</div>
+          <div style={{ fontSize: "0.78em", color: "#6A6050", marginTop: 2 }}>{despesas.length} despesa{despesas.length !== 1 ? "s" : ""}</div>
+        </div>
+        {despesas.length === 0 ? (
+          <div style={{ textAlign: "center", color: "#6A6050", fontSize: "0.9em", padding: "40px 0" }}>Ainda não registaste despesas.</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {[...despesas].reverse().map(d => {
+              const cat = CATS.find(c => c.id === d.categoria);
+              return (
+                <button key={d.id} onClick={() => setEditing(d)}
+                  style={{ ...S.expenseRow, cursor: "pointer", textAlign: "left", width: "100%", fontFamily: "inherit" }}>
+                  <span style={S.expEmoji}>{cat?.emoji}</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={S.expDesc}>{d.descricao}</div>
+                    <div style={S.expDate}>{d.data} · {cat?.label}</div>
+                  </div>
+                  <div style={{ color: "#EF4444", fontWeight: 600 }}>-{fmtKz(d.valor)}</div>
+                  <span style={{ color: "#6A6050", marginLeft: 8, fontSize: "0.9em" }}>✎</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+      {editing && (
+        <EditMovimentoModal tipo="despesa" item={editing}
+          onSave={(dados) => onEdit(editing.id, dados)}
+          onDelete={() => onDelete(editing.id)}
+          onClose={() => setEditing(null)} />
+      )}
+    </div>
+  );
+}
+
+// ── TODAS AS ENTRADAS ────────────────────────────────────────────────────────
+function AllEntradasScreen({ entradas, onEdit, onDelete, onBack, onAdd }) {
+  const [editing, setEditing] = useState(null);
+  const total = entradas.reduce((s, e) => s + e.valor, 0);
+  return (
+    <div style={S.screen}>
+      <div style={S.topBar}>
+        <button onClick={onBack} style={S.backBtn}>← Voltar</button>
+        <div style={S.screenTitle}>Todas as entradas</div>
+        <div style={{ width: 60 }} />
+      </div>
+      <div style={{ padding: "0 16px" }}>
+        <div style={{ background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: 14, padding: "16px", marginBottom: 18, textAlign: "center" }}>
+          <div style={{ fontSize: "0.75em", color: "#8A8070", marginBottom: 4 }}>TOTAL DE ENTRADAS EXTRA</div>
+          <div style={{ fontSize: "1.6em", fontWeight: 800, color: "#22C55E" }}>{fmtKz(total)}</div>
+          <div style={{ fontSize: "0.78em", color: "#6A6050", marginTop: 2 }}>{entradas.length} entrada{entradas.length !== 1 ? "s" : ""}</div>
+        </div>
+        {entradas.length === 0 ? (
+          <div style={{ textAlign: "center", color: "#6A6050", fontSize: "0.9em", padding: "40px 0" }}>Ainda não tens entradas extra.</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16 }}>
+            {[...entradas].reverse().map(e => (
+              <button key={e.id || e.nome} onClick={() => setEditing(e)}
+                style={{ ...S.expenseRow, cursor: "pointer", textAlign: "left", width: "100%", fontFamily: "inherit" }}>
+                <span style={S.expEmoji}>💰</span>
+                <div style={{ flex: 1 }}>
+                  <div style={S.expDesc}>{e.nome}</div>
+                  <div style={S.expDate}>{e.data}</div>
+                </div>
+                <div style={{ color: "#22C55E", fontWeight: 600 }}>+{fmtKz(e.valor)}</div>
+                <span style={{ color: "#6A6050", marginLeft: 8, fontSize: "0.9em" }}>✎</span>
+              </button>
+            ))}
+          </div>
+        )}
+        <button onClick={onAdd} style={{ ...S.btn }}>+ Adicionar entrada</button>
+      </div>
+      {editing && (
+        <EditMovimentoModal tipo="entrada" item={editing}
+          onSave={(dados) => onEdit(editing.id, dados)}
+          onDelete={() => onDelete(editing.id)}
+          onClose={() => setEditing(null)} />
+      )}
+    </div>
+  );
+}
+
 // ── APP ROOT ──────────────────────────────────────────────────────────────────
 const TRIAL_DAYS = 14;
-const BANNER_FROM_DAY = 4; // show banner starting day 4
 
 const INIT = {
   setup: false,
@@ -1782,9 +1882,9 @@ const INIT = {
   despesas: [],
   objectivos: [],
   setupDate: null,
-  reservas: [],
-  bannerDismissed: false,
   nome: "",
+  entradasExtra: [], // 13º, bónus, subsídios: [{ nome, valor, data }]
+  semEntradaInicial: false, // true = começou agora, só tem pagamento futuro
   inviteCode: generateInviteCode(),
   inviteCount: 0,
   conquistaMostrada: false,
@@ -1794,13 +1894,11 @@ const INIT = {
 export default function App() {
   const [state, setState] = useState(INIT);
   const [screen, setScreen] = useState("setup");
-  const [showBanner, setShowBanner] = useState(false);
 
   // Trial day calculation (uses daysSince helper)
   const trialDaysUsed = state.setupDate ? daysSince(state.setupDate) : 0;
   const trialDaysLeft = Math.max(0, TRIAL_DAYS - trialDaysUsed);
   const trialExpired = state.setup && trialDaysUsed >= TRIAL_DAYS;
-  const showBannerEligible = state.setup && trialDaysUsed >= BANNER_FROM_DAY && !trialExpired;
 
   const handleSetupDone = (data) => {
     setState(prev => ({ ...prev, ...data, setup: true, setupDate: todayStr() }));
@@ -1819,23 +1917,37 @@ export default function App() {
     // Dia 7 é coberto pelo ConquistaModal (nível Consciente)
     const diaDeConvite = (isPrimeiraDespesa && trialDaysUsed === 0) ||
                          (trialDaysUsed === 3 && !jaViuHoje);
-    const antesDoBanner = trialDaysUsed < BANNER_FROM_DAY;
 
     setState(prev => ({
       ...prev,
       despesas: [...prev.despesas, expense],
-      // Regista que o convite foi mostrado neste dia
-      conviteDiasMostrados: diaDeConvite && antesDoBanner
+      conviteDiasMostrados: diaDeConvite
         ? [...(prev.conviteDiasMostrados || []), trialDaysUsed]
         : prev.conviteDiasMostrados || [],
     }));
 
-    if (showBannerEligible) setShowBanner(true);
     setScreen("dashboard");
 
-    if (diaDeConvite && antesDoBanner) {
+    if (diaDeConvite) {
       setTimeout(() => setConviteMomento(true), 700);
     }
+  };
+
+  const handleEditExpense = (id, dados) => {
+    setState(prev => ({ ...prev, despesas: prev.despesas.map(d => d.id === id ? { ...d, ...dados } : d) }));
+  };
+  const handleDeleteExpense = (id) => {
+    setState(prev => ({ ...prev, despesas: prev.despesas.filter(d => d.id !== id) }));
+  };
+  const handleAddEntrada = (entrada) => {
+    setState(prev => ({ ...prev, entradasExtra: [...(prev.entradasExtra || []), entrada] }));
+    setScreen("dashboard");
+  };
+  const handleEditEntrada = (id, dados) => {
+    setState(prev => ({ ...prev, entradasExtra: (prev.entradasExtra || []).map(e => e.id === id ? { ...e, ...dados } : e) }));
+  };
+  const handleDeleteEntrada = (id) => {
+    setState(prev => ({ ...prev, entradasExtra: (prev.entradasExtra || []).filter(e => e.id !== id) }));
   };
 
   const handleSaveGoal = (goal) => {
@@ -1844,10 +1956,6 @@ export default function App() {
 
   const handleDeleteGoal = (id) => {
     setState(prev => ({ ...prev, objectivos: (prev.objectivos || []).filter(g => g.id !== id) }));
-  };
-
-  const handleReservar = (email) => {
-    setState(prev => ({ ...prev, reservas: [...prev.reservas, { email, date: todayStr() }] }));
   };
 
   // Conquista: mostra modal quando utilizador atinge novo nível
@@ -1867,7 +1975,7 @@ export default function App() {
   }, [diasAtivos, state.setup]);
 
   // If trial expired, show expired screen
-  if (trialExpired && screen !== "setup" && screen !== "validation") {
+  if (trialExpired && screen !== "setup") {
     return (
       <div style={S.app}>
         <style>{`
@@ -1876,7 +1984,7 @@ export default function App() {
           input { -webkit-appearance: none; }
           @keyframes slideUp { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
         `}</style>
-        <TrialExpiredScreen onReservar={handleReservar} />
+        <TrialExpiredScreen />
       </div>
     );
   }
@@ -1900,20 +2008,22 @@ export default function App() {
       `}</style>
 
       {screen === "setup"      && <SetupScreen onComplete={handleSetupDone} />}
-      {screen === "validation" && <ValidationScreen onDone={() => setScreen("dashboard")} />}
       {screen === "dashboard"  && (
         <>
           <DashboardScreen
             state={state}
             onAddExpense={() => setScreen("add")}
+            onAddEntrada={() => setScreen("addEntrada")}
+            onVerDespesas={() => setScreen("todasDespesas")}
+            onVerEntradas={() => setScreen("todasEntradas")}
             onOpenChat={() => setScreen("chat")}
             onOpenCharts={() => setScreen("charts")}
             onOpenGoals={() => setScreen("goals")}
             onSettings={() => setScreen("settings")}
             onOpenConvite={() => setScreen("convite")}
           />
-          {/* Trial countdown chip always visible from day 4 */}
-          {showBannerEligible && (
+          {/* Chip de contagem do teste — visível durante o trial */}
+          {state.setup && !trialExpired && (
             <div style={{ padding: "0 16px 8px", marginTop: -8 }}>
               <div style={{ fontSize: "0.72em", color: trialDaysLeft <= 2 ? "#EF4444" : "#8A8070", textAlign: "center" }}>
                 {trialDaysLeft <= 2
@@ -1922,14 +2032,6 @@ export default function App() {
               </div>
             </div>
           )}
-          {/* Banner — appears after first expense post day 4, closeable until urgent */}
-          {showBanner && showBannerEligible && (
-            <PreReservaBanner
-              diasTrial={trialDaysLeft}
-              onReservar={handleReservar}
-              onFechar={() => setShowBanner(false)}
-            />
-          )}
         </>
       )}
       {screen === "settings"   && <SettingsScreen state={state} onSave={handleSettingsSave} onBack={() => setScreen("dashboard")} onOpenConvite={() => setScreen("convite")} />}
@@ -1937,6 +2039,9 @@ export default function App() {
       {screen === "add"        && <AddExpenseScreen onSave={handleAddExpense} onBack={() => setScreen("dashboard")}
                                     despesasAnteriores={state.despesas}
                                     saldoRestante={state.salario - state.despesas.reduce((s,d) => s+d.valor, 0)} />}
+      {screen === "addEntrada" && <AddEntradaScreen onSave={handleAddEntrada} onBack={() => setScreen("dashboard")} />}
+      {screen === "todasDespesas" && <AllDespesasScreen despesas={state.despesas} onEdit={handleEditExpense} onDelete={handleDeleteExpense} onBack={() => setScreen("dashboard")} />}
+      {screen === "todasEntradas" && <AllEntradasScreen entradas={state.entradasExtra || []} onEdit={handleEditEntrada} onDelete={handleDeleteEntrada} onBack={() => setScreen("dashboard")} onAdd={() => setScreen("addEntrada")} />}
       {screen === "goals"      && <GoalsScreen state={state} onBack={() => setScreen("dashboard")} onSaveGoal={handleSaveGoal} onDeleteGoal={handleDeleteGoal} />}
       {screen === "charts"     && <ChartsScreen state={state} onBack={() => setScreen("dashboard")} />}
       {screen === "chat"       && <ChatScreen state={state} onBack={() => setScreen("dashboard")} />}
