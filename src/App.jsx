@@ -149,22 +149,12 @@ REGRAS:
 - Se perguntarem o que fazer com o investimento: sugere BODIVA, imobiliário, negócio próprio, dólares, poupança bancária
 - Máximo 150 palavras por resposta
 - Usa emojis com moderação`;
-  
-  // Substitui a linha antiga da apiKey por esta (padrão absoluto do teu React):
-  const apiKey = process.env.REACT_APP_ANTHROPIC_KEY;
 
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
+    const res = await fetch("/api/chat", {
       method: "POST",
-      headers: { 
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "dangerouslyAllowBrowser": "true"
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "claude-3-5-sonnet-20241022",
-        max_tokens: 1000,
         system,
         messages,
       }),
@@ -172,14 +162,14 @@ REGRAS:
 
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({}));
-      console.error("Erro da API Anthropic:", errorData);
-      return `Erro na API (${res.status}).`;
+      console.error("Erro no Servidor:", errorData);
+      return `Erro ao processar o pedido (${res.status}).`;
     }
 
     const data = await res.json();
     return data.content?.map(b => b.text || "").join("") || "Erro na resposta.";
   } catch (error) {
-    console.error("Erro na comunicação com a AI:", error);
+    console.error("Erro na comunicação com o servidor:", error);
     return "Não consegui ligar ao servidor da IA. Tenta novamente.";
   }
 }
