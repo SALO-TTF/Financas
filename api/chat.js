@@ -1,9 +1,9 @@
 export const config = {
-  runtime: 'edge', // Usa o Edge Runtime para evitar problemas de compatibilidade com o CRA
+  runtime: 'edge', 
 };
 
 export default async function handler(req) {
-  // 1. Bloquear métodos que não sejam POST
+  // Garantir que é um pedido POST
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Método não permitido' }), {
       status: 405,
@@ -12,7 +12,7 @@ export default async function handler(req) {
   }
 
   try {
-    // 2. Extrair os dados do body com a API padrão do Edge (req.json())
+    // Extração correta do body no ambiente Edge
     const { system, messages } = await req.json();
     const apiKey = process.env.REACT_APP_ANTHROPIC_KEY;
 
@@ -23,7 +23,7 @@ export default async function handler(req) {
       });
     }
 
-    // 3. Fazer a chamada à API da Anthropic
+    // Chamada segura para a Anthropic a partir do servidor da Vercel
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -41,15 +41,13 @@ export default async function handler(req) {
 
     const data = await response.json();
 
-    // 4. Retornar a resposta para o React
     return new Response(JSON.stringify(data), {
       status: response.status,
       headers: { 'Content-Type': 'application/json' },
     });
 
   } catch (error) {
-    console.error("Erro no proxy Edge:", error);
-    return new Response(JSON.stringify({ error: 'Erro interno no servidor proxy' }), {
+    return new Response(JSON.stringify({ error: 'Erro interno no servidor proxy Edge' }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },
     });
