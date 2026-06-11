@@ -106,6 +106,35 @@ const SUGESTOES = {
 };
 
 // ── AI ────────────────────────────────────────────────────────────────────────
+//async function askAI(messages, userData) {
+//  const system = `És um assistente financeiro chamado "Klaco".
+//Falas português europeu. És directo, empático e prático. Nunca julgas.
+
+//DADOS DO UTILIZADOR:
+//${JSON.stringify(userData, null, 2)}
+
+//REGRAS:
+//- Responde sempre com base nos dados reais acima
+//- Usa valores em Kwanzas (Kz)
+//- Dá conselhos práticos para o contexto angolano
+//- Se perguntarem o que fazer com o investimento: sugere BODIVA, imobiliário, negócio próprio, dólares, poupança bancária
+//- Máximo 150 palavras por resposta
+//- Usa emojis com moderação`;
+
+ // const res = await fetch("https://api.anthropic.com/v1/messages", {
+ //   method: "POST",
+ //   headers: { "Content-Type": "application/json" },
+ //   body: JSON.stringify({
+ //     model: "claude-sonnet-4-20250514",
+ //     max_tokens: 1000,
+ //     system,
+ //     messages,
+ //   }),
+ // });
+ // const data = await res.json();
+ // return data.content?.map(b => b.text || "").join("") || "Erro na resposta.";
+//}
+// ── AI ────────────────────────────────────────────────────────────────────────
 async function askAI(messages, userData) {
   const system = `És um assistente financeiro chamado "Klaco".
 Falas português europeu. És directo, empático e prático. Nunca julgas.
@@ -121,18 +150,38 @@ REGRAS:
 - Máximo 150 palavras por resposta
 - Usa emojis com moderação`;
 
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 1000,
-      system,
-      messages,
-    }),
-  });
-  const data = await res.json();
-  return data.content?.map(b => b.text || "").join("") || "Erro na resposta.";
+  // Esta linha tenta ler o formato do Vite e, se não encontrar, lê o formato clássico. Zero erros!
+  const apiKey = import.meta.env?.VITE_ANTHROPIC_KEY || process.env?.REACT_APP_ANTHROPIC_KEY;
+
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { 
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "dangerouslyAllowBrowser": "true"
+      },
+      body: JSON.stringify({
+        model: "claude-3-5-sonnet-20241022",
+        max_tokens: 1000,
+        system,
+        messages,
+      }),
+    });
+
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({}));
+      console.error("Erro da API Anthropic:", errorData);
+      return `Erro na API (${res.status}).`;
+    }
+
+    const data = await res.json();
+    return data.content?.map(b => b.text || "").join("") || "Erro na resposta.";
+  } catch (error) {
+    console.error("Erro na comunicação com a AI:", error);
+    return "Não consegui ligar ao servidor da IA. Tenta novamente.";
+  }
 }
 
 // ── SETUP (multi-step, with free back navigation + editable %) ────────────────
