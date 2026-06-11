@@ -149,9 +149,9 @@ REGRAS:
 - Se perguntarem o que fazer com o investimento: sugere BODIVA, imobiliário, negócio próprio, dólares, poupança bancária
 - Máximo 150 palavras por resposta
 - Usa emojis com moderação`;
-
-  // Esta linha tenta ler o formato do Vite e, se não encontrar, lê o formato clássico. Zero erros!
-  const apiKey = import.meta.env?.VITE_ANTHROPIC_KEY || process.env?.REACT_APP_ANTHROPIC_KEY;
+  
+  // Substitui a linha antiga da apiKey por esta (padrão absoluto do teu React):
+  const apiKey = process.env.REACT_APP_ANTHROPIC_KEY;
 
   try {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
