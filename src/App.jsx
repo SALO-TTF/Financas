@@ -105,75 +105,6 @@ const SUGESTOES = {
   ],
 };
 
-// ── AI ────────────────────────────────────────────────────────────────────────
-//async function askAI(messages, userData) {
-//  const system = `És um assistente financeiro chamado "Klaco".
-//Falas português europeu. És directo, empático e prático. Nunca julgas.
-
-//DADOS DO UTILIZADOR:
-//${JSON.stringify(userData, null, 2)}
-
-//REGRAS:
-//- Responde sempre com base nos dados reais acima
-//- Usa valores em Kwanzas (Kz)
-//- Dá conselhos práticos para o contexto angolano
-//- Se perguntarem o que fazer com o investimento: sugere BODIVA, imobiliário, negócio próprio, dólares, poupança bancária
-//- Máximo 150 palavras por resposta
-//- Usa emojis com moderação`;
-
- // const res = await fetch("https://api.anthropic.com/v1/messages", {
- //   method: "POST",
- //   headers: { "Content-Type": "application/json" },
- //   body: JSON.stringify({
- //     model: "claude-sonnet-4-20250514",
- //     max_tokens: 1000,
- //     system,
- //     messages,
- //   }),
- // });
- // const data = await res.json();
- // return data.content?.map(b => b.text || "").join("") || "Erro na resposta.";
-//}
-// ── AI ────────────────────────────────────────────────────────────────────────
-async function askAI(messages, userData) {
-  const system = `És um assistente financeiro chamado "Klaco".
-Falas português europeu. És directo, empático e prático. Nunca julgas.
-
-DADOS DO UTILIZADOR:
-${JSON.stringify(userData, null, 2)}
-
-REGRAS:
-- Responde sempre com base nos dados reais acima
-- Usa valores em Kwanzas (Kz)
-- Dá conselhos práticos para o contexto angolano
-- Se perguntarem o que fazer com o investimento: sugere BODIVA, imobiliário, negócio próprio, dólares, poupança bancária
-- Máximo 150 palavras por resposta
-- Usa emojis com moderação`;
-
-  try {
-    const res = await fetch("/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        system,
-        messages,
-      }),
-    });
-
-    if (!res.ok) {
-      const errorData = await res.json().catch(() => ({}));
-      console.error("Erro no Servidor:", errorData);
-      return `Erro ao processar o pedido (${res.status}).`;
-    }
-
-    const data = await res.json();
-    return data.content?.map(b => b.text || "").join("") || "Erro na resposta.";
-  } catch (error) {
-    console.error("Erro na comunicação com o servidor:", error);
-    return "Não consegui ligar ao servidor da IA. Tenta novamente.";
-  }
-}
-
 // ── SETUP (multi-step, with free back navigation + editable %) ────────────────
 function SetupScreen({ onComplete }) {
   const [step, setStep] = useState(0);
@@ -387,7 +318,7 @@ function SetupScreen({ onComplete }) {
 }
 
 // ── DASHBOARD ─────────────────────────────────────────────────────────────────
-function DashboardScreen({ state, onAddExpense, onAddEntrada, onVerDespesas, onVerEntradas, onOpenChat, onOpenCharts, onOpenGoals, onOpenConvite }) {
+function DashboardScreen({ state, onAddExpense, onAddEntrada, onOpenCharts, onOpenGoals, onOpenConvite }) {
   const { salario, dataRecebimento, proximoPagamento, despesas, pct, objectivos = [], entradasExtra = [], semEntradaInicial = false } = state;
   const [showAddMenu, setShowAddMenu] = useState(false);
 
@@ -396,9 +327,13 @@ function DashboardScreen({ state, onAddExpense, onAddEntrada, onVerDespesas, onV
   const rendimentoPeriodo = salario + totalExtra;
 
   // Period: dataRecebimento → proximoPagamento
-  // Se o utilizador começou agora (sem entrada inicial), o período conta a partir de hoje
-  const diasRestantes = daysUntil(proximoPagamento);
-  const diasPassados = semEntradaInicial ? 0 : daysSince(dataRecebimento);
+  // Caso "comecei agora": antes do 1º pagamento, conta a partir de hoje (diasPassados=0).
+  // Quando o 1º pagamento chega, passa a contar um período normal a partir dessa data.
+  const primeiroPagamentoChegou = semEntradaInicial && daysUntil(proximoPagamento) <= 0;
+  const inicioPeriodo = (semEntradaInicial && primeiroPagamentoChegou) ? proximoPagamento : dataRecebimento;
+  const fimPeriodo = (semEntradaInicial && primeiroPagamentoChegou) ? addMonths(proximoPagamento, 1) : proximoPagamento;
+  const diasRestantes = Math.max(0, daysUntil(fimPeriodo));
+  const diasPassados = (semEntradaInicial && !primeiroPagamentoChegou) ? 0 : daysSince(inicioPeriodo);
   const diasPeriodo = diasRestantes + diasPassados;
 
   // Despesas por categoria
@@ -435,6 +370,16 @@ function DashboardScreen({ state, onAddExpense, onAddEntrada, onVerDespesas, onV
   // Hero tone
   const heroPositive = gastoDiario >= taxaDiaria;
 
+  // Estado de espera: marcou "comecei agora" e o primeiro pagamento ainda não chegou.
+  // O salário inserido é a EXPECTATIVA, não algo já recebido — por isso não depende de ser zero.
+  const aguardaPrimeiroPagamento = semEntradaInicial && !primeiroPagamentoChegou;
+  const dataPrimeiroFmt = (() => {
+    try {
+      const d = new Date(proximoPagamento + "T00:00:00");
+      return d.toLocaleDateString("pt-PT", { day: "numeric", month: "long" });
+    } catch { return proximoPagamento; }
+  })();
+
   return (
     <div style={S.screen}>
       {/* Header */}
@@ -458,29 +403,44 @@ function DashboardScreen({ state, onAddExpense, onAddEntrada, onVerDespesas, onV
           : "linear-gradient(135deg,#1A0800,#100500)",
         borderColor: heroPositive ? "rgba(245,158,11,0.2)" : "rgba(239,68,68,0.25)",
       }}>
-        <div style={{ ...S.heroLabel, color: heroPositive ? "#F59E0B" : "#EF4444" }}>
-          {gastoDiario >= 0 ? "PODES GASTAR HOJE" : "LIMITE DIÁRIO EXCEDIDO"}
-        </div>
-        <div style={{ ...S.heroAmount, color: heroPositive ? "#F59E0B" : "#EF4444" }}>
-          {gastoDiario >= 0 ? fmtKz(gastoDiario) : fmtKz(Math.abs(gastoDiario))}
-        </div>
-        <div style={{ ...S.heroSub, color: heroPositive ? "#A08850" : "#C06040" }}>
-          {gastoDiario >= 0
-            ? `${diasRestantes} dias até ao próximo pagamento`
-            : `Precisas de compensar nos próximos ${diasRestantes} dias`}
-        </div>
-
-        <div style={S.heroDivider} />
-        <div style={S.heroRow}>
-          <div>
-            <div style={S.heroSmallLabel}>Sobra este mês</div>
-            <div style={{ ...S.heroSmall, color: saldo >= 0 ? "#C8A040" : "#EF4444" }}>{fmtKz(saldo)}</div>
-          </div>
-          <div style={{ textAlign: "right" }}>
-            <div style={S.heroSmallLabel}>Já gastaste</div>
-            <div style={{ ...S.heroSmall, color: "#6A6050" }}>{fmtKz(totalGasto)}</div>
-          </div>
-        </div>
+        {aguardaPrimeiroPagamento ? (
+          <>
+            <div style={{ ...S.heroLabel, color: "#F59E0B" }}>O TEU PRIMEIRO PAGAMENTO ESTÁ A CHEGAR</div>
+            <div style={{ ...S.heroAmount, color: "#F59E0B", fontSize: "2.2em" }}>Em breve 🌅</div>
+            <div style={{ ...S.heroSub, color: "#A08850", lineHeight: 1.5 }}>
+              A partir de {dataPrimeiroFmt}, vais saber exactamente quanto podes gastar todos os dias.
+            </div>
+            <div style={S.heroDivider} />
+            <div style={{ fontSize: "0.85em", color: "#8A8070", lineHeight: 1.5 }}>
+              Faltam {diasRestantes} dia{diasRestantes !== 1 ? "s" : ""}. Até lá, podes ir conhecendo a Klaco. 👇
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ ...S.heroLabel, color: heroPositive ? "#F59E0B" : "#EF4444" }}>
+              {gastoDiario >= 0 ? "PODES GASTAR HOJE" : "LIMITE DIÁRIO EXCEDIDO"}
+            </div>
+            <div style={{ ...S.heroAmount, color: heroPositive ? "#F59E0B" : "#EF4444" }}>
+              {gastoDiario >= 0 ? fmtKz(gastoDiario) : fmtKz(Math.abs(gastoDiario))}
+            </div>
+            <div style={{ ...S.heroSub, color: heroPositive ? "#A08850" : "#C06040" }}>
+              {gastoDiario >= 0
+                ? `${diasRestantes} dias até ao próximo pagamento`
+                : `Precisas de compensar nos próximos ${diasRestantes} dias`}
+            </div>
+            <div style={S.heroDivider} />
+            <div style={S.heroRow}>
+              <div>
+                <div style={S.heroSmallLabel}>Sobra este mês</div>
+                <div style={{ ...S.heroSmall, color: saldo >= 0 ? "#C8A040" : "#EF4444" }}>{fmtKz(saldo)}</div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div style={S.heroSmallLabel}>Já gastaste</div>
+                <div style={{ ...S.heroSmall, color: "#6A6050" }}>{fmtKz(totalGasto)}</div>
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Categories */}
@@ -502,17 +462,25 @@ function DashboardScreen({ state, onAddExpense, onAddEntrada, onVerDespesas, onV
                   <div style={S.catName}>{c.label}</div>
                 </div>
                 <div style={{ textAlign: "right" }}>
-                  <div style={{ color: over ? "#EF4444" : c.color, fontWeight: 700, fontSize: "0.9em" }}>
-                    {fmtKz(gasto)}
-                    {reservado > 0 && <span style={{ fontSize: "0.75em", color: "#F59E0B", display: "block" }}>+ {fmtKz(reservado)} obj.</span>}
-                  </div>
-                  <div style={S.catLimit}>/ {fmtKz(orc)} ({pct[c.id]}%)</div>
+                  {aguardaPrimeiroPagamento ? (
+                    <div style={{ color: "#8A8070", fontWeight: 700, fontSize: "0.85em" }}>em breve</div>
+                  ) : (
+                    <>
+                      <div style={{ color: over ? "#EF4444" : c.color, fontWeight: 700, fontSize: "0.9em" }}>
+                        {fmtKz(gasto)}
+                        {reservado > 0 && <span style={{ fontSize: "0.75em", color: "#F59E0B", display: "block" }}>+ {fmtKz(reservado)} obj.</span>}
+                      </div>
+                      <div style={S.catLimit}>/ {fmtKz(orc)} ({pct[c.id]}%)</div>
+                    </>
+                  )}
                 </div>
               </div>
               <div style={S.barBg}>
-                <div style={{ ...S.barFill, width: `${pctUsed}%`, background: over ? "#EF4444" : c.color }} />
+                <div style={{ ...S.barFill, width: `${aguardaPrimeiroPagamento ? 0 : pctUsed}%`, background: over ? "#EF4444" : c.color }} />
               </div>
-              {over
+              {aguardaPrimeiroPagamento
+                ? <div style={{ fontSize: "0.82em", color: "#8A8070", marginTop: 8, fontWeight: 600 }}>🌅 Em breve saberás</div>
+                : over
                 ? <div style={S.overAlert}>⚠️ Excedeste em {fmtKz(totalUsado - orc)}</div>
                 : <div style={{ fontSize: "0.82em", color: "#22C55E", marginTop: 8, fontWeight: 600 }}>
                     ✓ {fmtKz(restante)} disponível
@@ -522,53 +490,6 @@ function DashboardScreen({ state, onAddExpense, onAddEntrada, onVerDespesas, onV
           );
         })}
       </div>
-
-      {/* Últimas despesas com "ver todas" */}
-      {despesas.length > 0 && (
-        <>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0 20px", marginBottom: 12 }}>
-            <span style={{ ...S.sectionLabel, padding: 0, marginBottom: 0 }}>ÚLTIMAS DESPESAS</span>
-            <button onClick={onVerDespesas} style={{ background: "transparent", border: "none", color: "#F59E0B", fontSize: "0.8em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Ver todas →</button>
-          </div>
-          <div style={S.expenseList}>
-            {[...despesas].reverse().slice(0, 5).map(d => {
-              const cat = CATS.find(c => c.id === d.categoria);
-              return (
-                <div key={d.id} style={S.expenseRow}>
-                  <span style={S.expEmoji}>{cat?.emoji}</span>
-                  <div style={{ flex: 1 }}>
-                    <div style={S.expDesc}>{d.descricao}</div>
-                    <div style={S.expDate}>{d.data}</div>
-                  </div>
-                  <div style={{ color: "#EF4444", fontWeight: 600 }}>-{fmtKz(d.valor)}</div>
-                </div>
-              );
-            })}
-          </div>
-        </>
-      )}
-
-      {/* Entradas extra com "ver todas" */}
-      {entradasExtra.length > 0 && (
-        <>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0 20px", marginBottom: 12, marginTop: 4 }}>
-            <span style={{ ...S.sectionLabel, padding: 0, marginBottom: 0 }}>OUTRAS ENTRADAS</span>
-            <button onClick={onVerEntradas} style={{ background: "transparent", border: "none", color: "#F59E0B", fontSize: "0.8em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Ver todas →</button>
-          </div>
-          <div style={S.expenseList}>
-            {[...entradasExtra].reverse().slice(0, 3).map(e => (
-              <div key={e.id || e.nome} style={S.expenseRow}>
-                <span style={S.expEmoji}>💰</span>
-                <div style={{ flex: 1 }}>
-                  <div style={S.expDesc}>{e.nome}</div>
-                  <div style={S.expDate}>{e.data}</div>
-                </div>
-                <div style={{ color: "#22C55E", fontWeight: 600 }}>+{fmtKz(e.valor)}</div>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
 
       {/* Botão único com lista pendente: Despesa ou Entrada */}
       <div style={{ padding: "0 16px 100px" }}>
@@ -590,38 +511,22 @@ function DashboardScreen({ state, onAddExpense, onAddEntrada, onVerDespesas, onV
             </button>
           </div>
         )}
-        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-          <button onClick={onOpenChat} style={{
-            flex: 1, background: "transparent", border: "1px solid #1A1A1A",
-            borderRadius: 12, padding: "12px", color: "#8A8070",
-            fontSize: "0.82em", cursor: "pointer", fontFamily: "inherit",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-          }}>
-            💬 Assistente IA
-          </button>
-          <button onClick={onOpenCharts} style={{
-            flex: 1, background: "transparent", border: "1px solid #1A1A1A",
-            borderRadius: 12, padding: "12px", color: "#8A8070",
-            fontSize: "0.82em", cursor: "pointer", fontFamily: "inherit",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-          }}>
-            📊 Ver gráficos
-          </button>
-        </div>
+        <button onClick={onOpenCharts} style={{
+          width: "100%", background: "transparent", border: "1px solid #1A1A1A",
+          borderRadius: 12, padding: "12px", color: "#8A8070",
+          fontSize: "0.82em", cursor: "pointer", fontFamily: "inherit",
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+          marginTop: 10,
+        }}>
+          📊 Ver gráficos
+        </button>
       </div>
     </div>
   );
 }
 
 // ── SETTINGS (edit salário, datas, percentagens) ──────────────────────────────
-function SettingsScreen({ state, onSave, onBack, onOpenConvite }) {
-  const [nome, setNome] = useState(state.nome || "");
-  const [salario, setSalario] = useState(String(state.salario));
-  const [dataRecebimento, setDataRecebimento] = useState(state.dataRecebimento);
-  const [proximoPagamento, setProximoPagamento] = useState(state.proximoPagamento);
-  const [pct, setPct] = useState({ ...state.pct });
-  const [guardado, setGuardado] = useState(false);
-
+function SettingsScreen({ onBack, onEditarDados, onVerDespesas, onVerEntradas, onOpenConvite }) {
   // Número de WhatsApp da empresa
   const WHATSAPP_SUPORTE = "244923933353";
   const abrirSuporte = () => {
@@ -629,12 +534,73 @@ function SettingsScreen({ state, onSave, onBack, onOpenConvite }) {
     window.open(`https://wa.me/${WHATSAPP_SUPORTE}?text=${msg}`, "_blank");
   };
 
-  // Simple independent control — allow clearing to retype
+  const Opcao = ({ emoji, titulo, sub, onClick, cor = "#E8E0D0" }) => (
+    <button onClick={onClick}
+      style={{ width: "100%", background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: 14, padding: "16px 18px", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 14, textAlign: "left", marginBottom: 10 }}>
+      <span style={{ fontSize: "1.4em" }}>{emoji}</span>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: "0.95em", fontWeight: 700, color: cor }}>{titulo}</div>
+        {sub && <div style={{ fontSize: "0.78em", color: "#8A8070", marginTop: 2 }}>{sub}</div>}
+      </div>
+      <span style={{ color: "#6A6050", fontSize: "1.1em" }}>›</span>
+    </button>
+  );
+
+  return (
+    <div style={S.screen}>
+      <div style={S.topBar}>
+        <button onClick={onBack} style={S.backBtn}>← Voltar</button>
+        <div style={S.screenTitle}>Definições</div>
+        <div style={{ width: 60 }} />
+      </div>
+      <div style={{ padding: "0 16px" }}>
+        <Opcao emoji="👤" titulo="Editar os meus dados" sub="Nome, rendimento, datas e percentagens" onClick={onEditarDados} />
+        <Opcao emoji="🛒" titulo="Todas as despesas" sub="Ver, editar ou apagar" onClick={onVerDespesas} />
+        <Opcao emoji="💰" titulo="Todas as entradas" sub="13º, bónus, subsídios e mais" onClick={onVerEntradas} />
+        <Opcao emoji="🤝" titulo="Comunidade e convites" sub="Convida amigos para a Klaco" onClick={onOpenConvite} cor="#F59E0B" />
+        <Opcao emoji="💬" titulo="Suporte e dúvidas" sub="Fala connosco no WhatsApp" onClick={abrirSuporte} cor="#22C55E" />
+
+        {/* NOTIFICAÇÕES — lembrete diário de hábito */}
+        <div style={{ background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: 14, padding: "16px 18px", marginTop: 6 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              <span style={{ fontSize: "1.4em" }}>🔔</span>
+              <div>
+                <div style={{ fontSize: "0.95em", fontWeight: 700, color: "#E8E0D0" }}>Lembrete diário</div>
+                <div style={{ fontSize: "0.78em", color: "#8A8070", marginTop: 2 }}>«Sabe quanto podes gastar hoje 🌅»</div>
+              </div>
+            </div>
+            {/* [DEV] Ligar ao sistema de notificações push do backend */}
+            <div style={{ width: 44, height: 26, borderRadius: 13, background: "#F59E0B", position: "relative", cursor: "pointer", flexShrink: 0 }}>
+              <div style={{ position: "absolute", top: 3, right: 3, width: 20, height: 20, borderRadius: "50%", background: "#000" }} />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── EDITAR OS MEUS DADOS ──────────────────────────────────────────────────────
+function EditarDadosScreen({ state, onSave, onBack }) {
+  const [nome, setNome] = useState(state.nome || "");
+  const [salario, setSalario] = useState(String(state.salario));
+  const [salarioDisplay, setSalarioDisplay] = useState(
+    state.salario ? String(state.salario).replace(/\B(?=(\d{3})+(?!\d))/g, ".") : ""
+  );
+  const [dataRecebimento, setDataRecebimento] = useState(state.dataRecebimento);
+  const [proximoPagamento, setProximoPagamento] = useState(state.proximoPagamento);
+  const [pct, setPct] = useState({ ...state.pct });
+  const [guardado, setGuardado] = useState(false);
+
+  const handleSalario = (raw) => {
+    const digits = raw.replace(/\D/g, "");
+    setSalario(digits);
+    setSalarioDisplay(digits === "" ? "" : String(parseInt(digits,10)).replace(/\B(?=(\d{3})+(?!\d))/g, "."));
+  };
+
   const handlePct = (id, raw) => {
-    if (raw === "" || raw === "-") {
-      setPct(prev => ({ ...prev, [id]: "" }));
-      return;
-    }
+    if (raw === "" || raw === "-") { setPct(prev => ({ ...prev, [id]: "" })); return; }
     const val = Math.min(100, Math.max(0, parseInt(raw) || 0));
     setPct(prev => ({ ...prev, [id]: val }));
   };
@@ -647,34 +613,26 @@ function SettingsScreen({ state, onSave, onBack, onOpenConvite }) {
     <div style={S.screen}>
       <div style={S.topBar}>
         <button onClick={onBack} style={S.backBtn}>← Voltar</button>
-        <div style={S.screenTitle}>Definições</div>
+        <div style={S.screenTitle}>Os meus dados</div>
         <div style={{ width: 60 }} />
       </div>
       <div style={{ padding: "0 16px" }}>
         <div style={S.field}>
           <label style={S.label}>O TEU NOME</label>
-          <input
-            type="text"
-            value={nome}
-            onChange={e => setNome(e.target.value)}
-            placeholder="O teu nome"
-            style={S.input}
-          />
+          <input type="text" value={nome} onChange={e => setNome(e.target.value)} placeholder="O teu nome" style={S.input} />
         </div>
         <div style={S.field}>
           <label style={S.label}>RENDIMENTO MENSAL (Kz)</label>
           <div style={{ ...S.inputGroup, marginTop: 0 }}>
             <span style={S.currency}>Kz</span>
-            <input type="number" value={salario} onChange={e => setSalario(e.target.value)}
-              style={S.bigInput} />
+            <input type="text" inputMode="numeric" value={salarioDisplay} onChange={e => handleSalario(e.target.value)}
+              placeholder="0" style={S.bigInput} />
           </div>
         </div>
-
         <div style={S.field}>
           <label style={S.label}>DATA DO ÚLTIMO PAGAMENTO</label>
           <input type="date" value={dataRecebimento} onChange={e => setDataRecebimento(e.target.value)} style={S.dateInput} />
         </div>
-
         <div style={S.field}>
           <label style={S.label}>DATA DO PRÓXIMO PAGAMENTO</label>
           <input type="date" value={proximoPagamento} onChange={e => setProximoPagamento(e.target.value)} style={S.dateInput} />
@@ -687,12 +645,8 @@ function SettingsScreen({ state, onSave, onBack, onOpenConvite }) {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                 <span style={{ fontWeight: 600, fontSize: "0.9em", color: "#DDD" }}>{c.emoji} {c.label}</span>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <input
-                    type="number" min="0" max="100"
-                    value={pct[c.id]}
-                    onChange={e => handlePct(c.id, e.target.value)}
-                    style={{ width: 52, background: "#111", border: `1px solid ${c.color}60`, borderRadius: 8, padding: "5px 8px", color: c.color, fontWeight: 800, fontFamily: "inherit", outline: "none", textAlign: "center", fontSize: "0.95em" }}
-                  />
+                  <input type="number" min="0" max="100" value={pct[c.id]} onChange={e => handlePct(c.id, e.target.value)}
+                    style={{ width: 52, background: "#111", border: `1px solid ${c.color}60`, borderRadius: 8, padding: "5px 8px", color: c.color, fontWeight: 800, fontFamily: "inherit", outline: "none", textAlign: "center", fontSize: "0.95em" }} />
                   <span style={{ color: "#8A8070" }}>%</span>
                 </div>
               </div>
@@ -712,36 +666,11 @@ function SettingsScreen({ state, onSave, onBack, onOpenConvite }) {
           Guardar alterações
         </button>
         {guardado && (
-          <div style={{ background: "#0A1A0A", border: "1px solid #22C55E40", borderRadius: 12, padding: "12px 16px", marginBottom: 12, animation: "slideUp 0.2s ease", display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ background: "#0A1A0A", border: "1px solid #22C55E40", borderRadius: 12, padding: "12px 16px", marginBottom: 20, animation: "slideUp 0.2s ease", display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: "1.1em" }}>✓</span>
             <span style={{ fontSize: "0.86em", color: "#22C55E", fontWeight: 600 }}>Guardado. O teu número já reflete as alterações.</span>
           </div>
         )}
-
-        {/* NOTIFICAÇÕES — lembrete diário de hábito */}
-        <div style={{ background: "#0A0A0A", border: "1px solid #1A1A1A", borderRadius: 12, padding: "14px 16px", marginBottom: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div>
-              <div style={{ fontSize: "0.9em", fontWeight: 700, color: "#E8E0D0" }}>🔔 Lembrete diário</div>
-              <div style={{ fontSize: "0.78em", color: "#8A8070", marginTop: 2 }}>«Sabe quanto podes gastar hoje 🌅»</div>
-            </div>
-            {/* [DEV] Ligar ao sistema de notificações push do backend */}
-            <div style={{ width: 44, height: 26, borderRadius: 13, background: "#F59E0B", position: "relative", cursor: "pointer" }}>
-              <div style={{ position: "absolute", top: 3, right: 3, width: 20, height: 20, borderRadius: "50%", background: "#000" }} />
-            </div>
-          </div>
-        </div>
-
-        {/* SUPORTE — WhatsApp */}
-        <button onClick={abrirSuporte}
-          style={{ width: "100%", background: "#25D366", border: "none", borderRadius: 14, padding: "15px", color: "#000", fontWeight: 800, fontSize: "0.95em", cursor: "pointer", fontFamily: "inherit", marginBottom: 12 }}>
-          💬 Suporte e dúvidas (WhatsApp)
-        </button>
-
-        <button onClick={onOpenConvite}
-          style={{ width: "100%", background: "transparent", border: "1px solid #F59E0B30", borderRadius: 14, padding: "15px", color: "#F59E0B", fontWeight: 700, fontSize: "0.95em", cursor: "pointer", fontFamily: "inherit" }}>
-          🤝 Comunidade e convites
-        </button>
       </div>
     </div>
   );
@@ -1223,130 +1152,6 @@ function ChartsScreen({ state, onBack }) {
   );
 }
 
-// ── CHAT ──────────────────────────────────────────────────────────────────────
-function ChatScreen({ state, onBack }) {
-  const { salario, proximoPagamento, despesas, pct } = state;
-  const dias = daysUntil(proximoPagamento);
-  const totalGasto = despesas.reduce((s, d) => s + d.valor, 0);
-  const saldo = salario - totalGasto;
-
-  const gastosPorCat = {};
-  CATS.forEach(c => {
-    gastosPorCat[c.label] = despesas.filter(d => d.categoria === c.id).reduce((s, d) => s + d.valor, 0);
-  });
-
-  const userData = {
-    salarioMensal: `${salario} Kz`,
-    saldoDisponivel: `${Math.round(saldo)} Kz`,
-    diasAtePagamento: dias,
-    gastoDiarioSeguro: `${Math.round(dias > 0 ? saldo / dias : saldo)} Kz`,
-    totalGasto: `${totalGasto} Kz`,
-    gastosPorCategoria: gastosPorCat,
-    orcamento: {
-      necessidades: `${Math.round(salario * pct.necessidades / 100)} Kz (${pct.necessidades}%)`,
-      qualidadeDeVida: `${Math.round(salario * pct.qualidade / 100)} Kz (${pct.qualidade}%)`,
-      investimento: `${Math.round(salario * pct.investimento / 100)} Kz (${pct.investimento}%)`,
-    },
-  };
-
-  const [messages, setMessages] = useState([{
-    role: "assistant",
-    content: `Olá! Sou o assistente da **Klaco** ☀️\n\nVejo que tens **${fmtKz(saldo)}** disponíveis e **${dias} dias** até ao próximo pagamento. Podes gastar até **${fmtKz(Math.max(0, dias > 0 ? saldo / dias : saldo))} por dia** em segurança.\n\nO que queres saber?`,
-  }]);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const bottomRef = useRef(null);
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, loading]);
-
-  const quickQ = ["Estou a gastar bem?", "O que faço com o valor investido?", "Como poupo mais este mês?", "Onde estou a gastar demais?"];
-
-  const send = async (text) => {
-    if (!text.trim() || loading) return;
-    const userMsg = { role: "user", content: text };
-    const newMsgs = [...messages, userMsg];
-    setMessages(newMsgs);
-    setInput("");
-    setLoading(true);
-    try {
-      const reply = await askAI(newMsgs.map(m => ({ role: m.role, content: m.content })), userData);
-      setMessages(prev => [...prev, { role: "assistant", content: reply }]);
-    } catch {
-      setMessages(prev => [...prev, { role: "assistant", content: "Erro de ligação. Tenta novamente." }]);
-    }
-    setLoading(false);
-  };
-
-  const renderMsg = (text) =>
-    text.split(/(\*\*[^*]+\*\*)/g).map((p, i) =>
-      p.startsWith("**") && p.endsWith("**")
-        ? <strong key={i} style={{ color: "#F59E0B" }}>{p.slice(2, -2)}</strong>
-        : p
-    );
-
-  return (
-    <div style={{ ...S.screen, display: "flex", flexDirection: "column", height: "100vh", paddingBottom: 0 }}>
-      <div style={S.topBar}>
-        <button onClick={onBack} style={S.backBtn}>← Voltar</button>
-        <div style={S.screenTitle}>Assistente IA</div>
-        <div style={{ width: 60 }} />
-      </div>
-
-      <div style={{ flex: 1, overflowY: "auto", padding: "0 16px 16px" }}>
-        {messages.map((m, i) => (
-          <div key={i} style={{ display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start", marginBottom: 12 }}>
-            {m.role === "assistant" && <div style={S.aiAvatar}>💰</div>}
-            <div style={{
-              maxWidth: "82%",
-              background: m.role === "user" ? "#1C1600" : "#131313",
-              border: `1px solid ${m.role === "user" ? "rgba(245,158,11,0.3)" : "#1E1E1E"}`,
-              borderRadius: m.role === "user" ? "18px 18px 4px 18px" : "4px 18px 18px 18px",
-              padding: "12px 16px",
-              fontSize: "0.92em",
-              lineHeight: 1.7,
-              color: m.role === "user" ? "#F59E0B" : "#DDD",
-              whiteSpace: "pre-wrap",
-            }}>
-              {renderMsg(m.content)}
-            </div>
-          </div>
-        ))}
-        {loading && (
-          <div style={{ display: "flex", alignItems: "center", marginBottom: 12 }}>
-            <div style={S.aiAvatar}>💰</div>
-            <div style={{ background: "#131313", border: "1px solid #1E1E1E", borderRadius: "4px 18px 18px 18px", padding: "14px 18px", display: "flex", gap: 5 }}>
-              {[0, 0.15, 0.3].map((d, i) => (
-                <div key={i} style={{ width: 7, height: 7, borderRadius: "50%", background: "#F59E0B", animation: `pulse 1.2s ${d}s infinite` }} />
-              ))}
-            </div>
-          </div>
-        )}
-        {messages.length <= 1 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
-            {quickQ.map((q, i) => (
-              <button key={i} onClick={() => send(q)}
-                style={{ background: "#0F0F0F", border: "1px solid #1E1E1E", borderRadius: 12, padding: "11px 16px", color: "#A09880", textAlign: "left", cursor: "pointer", fontFamily: "inherit", fontSize: "0.88em" }}>
-                {q}
-              </button>
-            ))}
-          </div>
-        )}
-        <div ref={bottomRef} />
-      </div>
-
-      <div style={{ display: "flex", gap: 10, padding: "12px 16px", borderTop: "1px solid #141414", background: "#080808" }}>
-        <input value={input} onChange={e => setInput(e.target.value)}
-          onKeyDown={e => e.key === "Enter" && send(input)}
-          placeholder="Pergunta sobre as tuas finanças..."
-          style={{ flex: 1, background: "#0F0F0F", border: "1px solid #1E1E1E", borderRadius: 12, padding: "12px 16px", color: "#E8E0D0", fontSize: "0.92em", fontFamily: "inherit", outline: "none" }} />
-        <button onClick={() => send(input)} disabled={!input.trim() || loading}
-          style={{ background: "#F59E0B", border: "none", borderRadius: 10, width: 44, height: 44, color: "#000", fontSize: "1.1em", fontWeight: 700, cursor: "pointer", opacity: input.trim() && !loading ? 1 : 0.4 }}>
-          ↑
-        </button>
-      </div>
-    </div>
-  );
-}
-
 // ── PRÉ-RESERVA BANNER (shown after saving expense from day 4 onwards) ─────────
 // ── TRIAL EXPIRED SCREEN — Pagamento ─────────────────────────────────────────
 function TrialExpiredScreen() {
@@ -1773,7 +1578,15 @@ function EditMovimentoModal({ tipo, item, onSave, onDelete, onClose }) {
   const isDespesa = tipo === "despesa";
   const [nome, setNome] = useState(isDespesa ? item.descricao : item.nome);
   const [valor, setValor] = useState(String(item.valor));
+  const [valorDisplay, setValorDisplay] = useState(
+    item.valor ? String(item.valor).replace(/\B(?=(\d{3})+(?!\d))/g, ".") : ""
+  );
   const [data, setData] = useState(item.data || todayStr());
+  const handleValor = (raw) => {
+    const digits = raw.replace(/\D/g, "");
+    setValor(digits);
+    setValorDisplay(digits === "" ? "" : String(parseInt(digits,10)).replace(/\B(?=(\d{3})+(?!\d))/g, "."));
+  };
   const v = parseFloat(String(valor).replace(/\D/g, "")) || 0;
   const valido = nome.trim().length > 0 && v > 0;
 
@@ -1789,7 +1602,11 @@ function EditMovimentoModal({ tipo, item, onSave, onDelete, onClose }) {
         </div>
         <div style={S.field}>
           <label style={S.label}>VALOR (Kz)</label>
-          <input type="number" value={valor} onChange={e => setValor(e.target.value)} style={S.input} />
+          <div style={{ ...S.inputGroup, marginTop: 0 }}>
+            <span style={S.currency}>Kz</span>
+            <input type="text" inputMode="numeric" value={valorDisplay} onChange={e => handleValor(e.target.value)}
+              placeholder="0" style={S.bigInput} />
+          </div>
         </div>
         <div style={S.field}>
           <label style={S.label}>DATA</label>
@@ -2029,8 +1846,8 @@ export default function App() {
   }
 
   // Which tabs show the bottom nav
-  const showNav = ["dashboard","goals","settings","charts","chat","convite"].includes(screen);
-  const navActive = ["goals","settings"].includes(screen) ? screen : "dashboard";
+  const showNav = ["dashboard","goals","settings","charts","convite","editarDados","todasDespesas","todasEntradas","addEntrada"].includes(screen);
+  const navActive = ["goals","settings","editarDados","todasDespesas","todasEntradas"].includes(screen) ? "settings" : ["goals"].includes(screen) ? screen : "dashboard";
 
   return (
     <div style={S.app}>
@@ -2053,9 +1870,6 @@ export default function App() {
             state={state}
             onAddExpense={() => setScreen("add")}
             onAddEntrada={() => setScreen("addEntrada")}
-            onVerDespesas={() => setScreen("todasDespesas")}
-            onVerEntradas={() => setScreen("todasEntradas")}
-            onOpenChat={() => setScreen("chat")}
             onOpenCharts={() => setScreen("charts")}
             onOpenGoals={() => setScreen("goals")}
             onSettings={() => setScreen("settings")}
@@ -2073,17 +1887,17 @@ export default function App() {
           )}
         </>
       )}
-      {screen === "settings"   && <SettingsScreen state={state} onSave={handleSettingsSave} onBack={() => setScreen("dashboard")} onOpenConvite={() => setScreen("convite")} />}
+      {screen === "settings"   && <SettingsScreen onBack={() => setScreen("dashboard")} onEditarDados={() => setScreen("editarDados")} onVerDespesas={() => setScreen("todasDespesas")} onVerEntradas={() => setScreen("todasEntradas")} onOpenConvite={() => setScreen("convite")} />}
+      {screen === "editarDados" && <EditarDadosScreen state={state} onSave={handleSettingsSave} onBack={() => setScreen("settings")} />}
       {screen === "convite"     && <ConviteScreen inviteCode={state.inviteCode} inviteCount={state.inviteCount} diasAtivos={diasAtivos} onBack={() => setScreen("dashboard")} />}
       {screen === "add"        && <AddExpenseScreen onSave={handleAddExpense} onBack={() => setScreen("dashboard")}
                                     despesasAnteriores={state.despesas}
                                     saldoRestante={state.salario - state.despesas.reduce((s,d) => s+d.valor, 0)} />}
       {screen === "addEntrada" && <AddEntradaScreen onSave={handleAddEntrada} onBack={() => setScreen("dashboard")} />}
-      {screen === "todasDespesas" && <AllDespesasScreen despesas={state.despesas} onEdit={handleEditExpense} onDelete={handleDeleteExpense} onBack={() => setScreen("dashboard")} />}
-      {screen === "todasEntradas" && <AllEntradasScreen entradas={state.entradasExtra || []} onEdit={handleEditEntrada} onDelete={handleDeleteEntrada} onBack={() => setScreen("dashboard")} onAdd={() => setScreen("addEntrada")} />}
+      {screen === "todasDespesas" && <AllDespesasScreen despesas={state.despesas} onEdit={handleEditExpense} onDelete={handleDeleteExpense} onBack={() => setScreen("settings")} />}
+      {screen === "todasEntradas" && <AllEntradasScreen entradas={state.entradasExtra || []} onEdit={handleEditEntrada} onDelete={handleDeleteEntrada} onBack={() => setScreen("settings")} onAdd={() => setScreen("addEntrada")} />}
       {screen === "goals"      && <GoalsScreen state={state} onBack={() => setScreen("dashboard")} onSaveGoal={handleSaveGoal} onDeleteGoal={handleDeleteGoal} />}
       {screen === "charts"     && <ChartsScreen state={state} onBack={() => setScreen("dashboard")} />}
-      {screen === "chat"       && <ChatScreen state={state} onBack={() => setScreen("dashboard")} />}
 
       {/* Modal de conquista — dias 1, 7, 14, 30, 60 */}
       {conquistaModal && !conviteMomento && (
