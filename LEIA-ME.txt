@@ -1,0 +1,41 @@
+KLACO — PROJETO DA APP (versão completa e final)
+=================================================
+
+ESTRUTURA DOS FICHEIROS:
+
+  src/App.jsx        ← O CÓDIGO PRINCIPAL DA APP (2.348 linhas).
+                       É AQUI que está tudo: login/criar conta,
+                       setup, dashboard, número do dia, despesas,
+                       entradas, definições, notificações, pagamento.
+                       ESTE é o ficheiro mais importante.
+
+  src/index.js       ← Arranca a app (carrega o App.jsx).
+
+  public/index.html  ← A "casca" HTML. É pequena de propósito (12 linhas).
+                       Só carrega a app. NÃO contém o código da app —
+                       o código está no App.jsx. Se procuravas o login
+                       aqui, ele NÃO está aqui: está no src/App.jsx.
+
+  package.json       ← Dependências (React).
+  vercel.json        ← Configuração de deploy.
+
+-------------------------------------------------
+O QUE FALTA O DEV LIGAR (procurar marcadores [DEV] no App.jsx):
+
+1. AUTENTICAÇÃO — Supabase Auth:
+   - Criar conta:  supabase.auth.signUp({ email, password })
+   - Entrar:       supabase.auth.signInWithPassword({ email, password })
+   - Recuperar:    supabase.auth.resetPasswordForEmail(email)
+
+2. PAGAMENTO — ProxyPay (referência Multicaixa):
+   - Gerar referência ao expirar o trial (ecrã TrialExpiredScreen)
+   - Webhook que reativa o acesso quando o pagamento é confirmado
+   - Substituir [entidade aqui] e [referência de pagamento aqui]
+
+3. NOTIFICAÇÕES — push (backend):
+   - Só enviar a quem tem o consentimento ligado (notifLembrete / notifNovidades)
+
+4. GUARDAR DADOS — Supabase:
+   - Persistir o estado do utilizador (atualmente vive na sessão)
+
+Procura "[DEV]" no App.jsx para encontrar cada ponto exato.

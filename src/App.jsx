@@ -106,6 +106,158 @@ const SUGESTOES = {
 };
 
 // ── SETUP (multi-step, with free back navigation + editable %) ────────────────
+// ── AUTENTICAÇÃO (entrar / criar conta / recuperar) ──────────────────────────
+function AuthScreen({ onAuth }) {
+  const [modo, setModo] = useState("inicio"); // inicio | criar | entrar | recuperar
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPass, setShowPass] = useState(false);
+  const [erro, setErro] = useState("");
+  const [recuperado, setRecuperado] = useState(false);
+
+  const emailValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  const passValida = password.length >= 6;
+
+  // [DEV] Ligar ao Supabase Auth: criar utilizador, validar login, recuperar password.
+  const submeterCriar = () => {
+    setErro("");
+    if (!emailValido) { setErro("Escreve um email válido."); return; }
+    if (!passValida) { setErro("A password precisa de pelo menos 6 caracteres."); return; }
+    // [DEV] Supabase: supabase.auth.signUp({ email, password })
+    onAuth(email);
+  };
+  const submeterEntrar = () => {
+    setErro("");
+    if (!emailValido || !passValida) { setErro("Verifica o email e a password."); return; }
+    // [DEV] Supabase: supabase.auth.signInWithPassword({ email, password })
+    onAuth(email);
+  };
+  const submeterRecuperar = () => {
+    setErro("");
+    if (!emailValido) { setErro("Escreve o email da tua conta."); return; }
+    // [DEV] Supabase: supabase.auth.resetPasswordForEmail(email)
+    setRecuperado(true);
+  };
+
+  const campoEmail = (
+    <div style={S.field}>
+      <label style={S.label}>EMAIL</label>
+      <input type="email" inputMode="email" autoCapitalize="none" value={email}
+        onChange={e => setEmail(e.target.value)} placeholder="o.teu@email.com" style={S.input} />
+    </div>
+  );
+  const campoPass = (
+    <div style={S.field}>
+      <label style={S.label}>PALAVRA-PASSE</label>
+      <div style={{ position: "relative" }}>
+        <input type={showPass ? "text" : "password"} value={password}
+          onChange={e => setPassword(e.target.value)} placeholder="Mínimo 6 caracteres"
+          style={{ ...S.input, paddingRight: 70 }} />
+        <button onClick={() => setShowPass(v => !v)}
+          style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "transparent", border: "none", color: "#8A8070", fontSize: "0.8em", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>
+          {showPass ? "Esconder" : "Mostrar"}
+        </button>
+      </div>
+    </div>
+  );
+  const msgErro = erro && (
+    <div style={{ fontSize: "0.82em", color: "#EF4444", marginBottom: 12 }}>{erro}</div>
+  );
+
+  return (
+    <div style={S.setup}>
+      <div style={S.setupCard}>
+        <div style={S.logo}>☀️ Klaco</div>
+
+        {modo === "inicio" && (
+          <>
+            <h2 style={S.setupTitle}>Agora sabes o que fazer com o teu dinheiro</h2>
+            <p style={{ ...S.setupSub, marginBottom: 28 }}>Cria a tua conta e descobre, todos os dias, quanto podes gastar.</p>
+            <button onClick={() => { setModo("criar"); setErro(""); }} style={{ ...S.btn, marginBottom: 12 }}>Criar conta</button>
+            <button onClick={() => { setModo("entrar"); setErro(""); }}
+              style={{ width: "100%", background: "transparent", border: "1px solid #2A2A2A", borderRadius: 14, padding: "15px", color: "#E8E0D0", fontWeight: 700, fontSize: "0.95em", cursor: "pointer", fontFamily: "inherit" }}>
+              Já tenho conta
+            </button>
+          </>
+        )}
+
+        {modo === "criar" && (
+          <>
+            <h2 style={S.setupTitle}>Cria a tua conta</h2>
+            <p style={{ ...S.setupSub, marginBottom: 20 }}>É rápido. Só precisas de um email e uma palavra-passe.</p>
+            {campoEmail}
+            {campoPass}
+            {msgErro}
+            <button onClick={submeterCriar}
+              style={{ ...S.btn, opacity: (emailValido && passValida) ? 1 : 0.5, marginBottom: 12 }}>
+              Criar conta
+            </button>
+            <p style={{ fontSize: "0.76em", color: "#8A8070", lineHeight: 1.5, textAlign: "center", marginBottom: 14 }}>
+              Ao criar conta confirmas que tens 18 anos ou mais e aceitas a{" "}
+              <span style={{ color: "#F59E0B" }}>Política de Privacidade</span> e os{" "}
+              <span style={{ color: "#F59E0B" }}>Termos de Uso</span>.
+            </p>
+            <button onClick={() => { setModo("inicio"); setErro(""); }}
+              style={{ width: "100%", background: "transparent", border: "none", color: "#8A8070", fontSize: "0.85em", cursor: "pointer", fontFamily: "inherit" }}>
+              ← Voltar
+            </button>
+          </>
+        )}
+
+        {modo === "entrar" && (
+          <>
+            <h2 style={S.setupTitle}>Bem-vindo de volta</h2>
+            <p style={{ ...S.setupSub, marginBottom: 20 }}>Entra na tua conta para continuar.</p>
+            {campoEmail}
+            {campoPass}
+            {msgErro}
+            <button onClick={submeterEntrar}
+              style={{ ...S.btn, opacity: (emailValido && passValida) ? 1 : 0.5, marginBottom: 10 }}>
+              Entrar
+            </button>
+            <button onClick={() => { setModo("recuperar"); setErro(""); setRecuperado(false); }}
+              style={{ width: "100%", background: "transparent", border: "none", color: "#F59E0B", fontSize: "0.85em", cursor: "pointer", fontFamily: "inherit", marginBottom: 14, fontWeight: 600 }}>
+              Esqueci-me da palavra-passe
+            </button>
+            <button onClick={() => { setModo("inicio"); setErro(""); }}
+              style={{ width: "100%", background: "transparent", border: "none", color: "#8A8070", fontSize: "0.85em", cursor: "pointer", fontFamily: "inherit" }}>
+              ← Voltar
+            </button>
+          </>
+        )}
+
+        {modo === "recuperar" && (
+          <>
+            <h2 style={S.setupTitle}>Recuperar palavra-passe</h2>
+            {recuperado ? (
+              <>
+                <p style={{ ...S.setupSub, marginBottom: 24, lineHeight: 1.6 }}>
+                  🌅 Se existir uma conta com esse email, vais receber instruções para criar uma nova palavra-passe.
+                </p>
+                <button onClick={() => { setModo("entrar"); setRecuperado(false); }} style={S.btn}>Voltar a entrar</button>
+              </>
+            ) : (
+              <>
+                <p style={{ ...S.setupSub, marginBottom: 20 }}>Escreve o email da tua conta e enviamos-te instruções.</p>
+                {campoEmail}
+                {msgErro}
+                <button onClick={submeterRecuperar}
+                  style={{ ...S.btn, opacity: emailValido ? 1 : 0.5, marginBottom: 14 }}>
+                  Enviar instruções
+                </button>
+                <button onClick={() => { setModo("entrar"); setErro(""); }}
+                  style={{ width: "100%", background: "transparent", border: "none", color: "#8A8070", fontSize: "0.85em", cursor: "pointer", fontFamily: "inherit" }}>
+                  ← Voltar
+                </button>
+              </>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function SetupScreen({ onComplete }) {
   const [step, setStep] = useState(0);
   const [nome, setNome] = useState("");
@@ -114,6 +266,15 @@ function SetupScreen({ onComplete }) {
   const [dataRecebimento, setDataRecebimento] = useState(todayStr());
   const [proximoPagamento, setProximoPagamento] = useState("");
   const [semEntradaInicial, setSemEntradaInicial] = useState(false); // começou agora
+  const [jaGastou, setJaGastou] = useState(null); // null=não respondeu, true/false
+  const [gastoAnterior, setGastoAnterior] = useState("");
+  const [gastoAnteriorDisplay, setGastoAnteriorDisplay] = useState("");
+
+  const handleGastoAnterior = (raw) => {
+    const digits = raw.replace(/\D/g, "");
+    setGastoAnterior(digits);
+    setGastoAnteriorDisplay(digits === "" ? "" : String(parseInt(digits,10)).replace(/\B(?=(\d{3})+(?!\d))/g, "."));
+  };
 
   const handleSalarioChange = (raw) => {
     const digits = raw.replace(/\D/g, "");
@@ -250,6 +411,39 @@ function SetupScreen({ onComplete }) {
         </div>
       ),
     },
+    // Passo 3 — já gastou parte do salário? (opcional, saltável)
+    {
+      title: "Já gastaste parte deste salário?",
+      subtitle: "Para o teu número começar mais certo. Podes saltar.",
+      valid: true,
+      body: (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <button onClick={() => { setJaGastou(false); setGastoAnterior(""); setGastoAnteriorDisplay(""); }}
+            style={{ display: "flex", alignItems: "center", gap: 12, background: jaGastou === false ? "#F59E0B15" : "#0A0A0A", border: `1px solid ${jaGastou === false ? "#F59E0B" : "#222"}`, borderRadius: 14, padding: "16px", cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+            <span style={{ fontSize: "1.3em" }}>🌅</span>
+            <div>
+              <div style={{ fontSize: "0.95em", fontWeight: 700, color: "#E8E0D0" }}>Não, começo agora</div>
+              <div style={{ fontSize: "0.8em", color: "#8A8070", marginTop: 2 }}>O número conta a partir de hoje</div>
+            </div>
+          </button>
+          <button onClick={() => setJaGastou(true)}
+            style={{ display: "flex", alignItems: "center", gap: 12, background: jaGastou === true ? "#F59E0B15" : "#0A0A0A", border: `1px solid ${jaGastou === true ? "#F59E0B" : "#222"}`, borderRadius: 14, padding: "16px", cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+            <span style={{ fontSize: "1.3em" }}>💸</span>
+            <div>
+              <div style={{ fontSize: "0.95em", fontWeight: 700, color: "#E8E0D0" }}>Sim, já gastei algum</div>
+              <div style={{ fontSize: "0.8em", color: "#8A8070", marginTop: 2 }}>Diz-me quanto, mais ou menos</div>
+            </div>
+          </button>
+          {jaGastou === true && (
+            <div style={{ ...S.inputGroup, marginTop: 4 }}>
+              <span style={S.currency}>Kz</span>
+              <input type="text" inputMode="numeric" autoFocus value={gastoAnteriorDisplay}
+                onChange={e => handleGastoAnterior(e.target.value)} placeholder="0" style={S.bigInput} />
+            </div>
+          )}
+        </div>
+      ),
+    },
   ];
 
   const cur = steps[step];
@@ -305,11 +499,17 @@ function SetupScreen({ onComplete }) {
             disabled={!cur.valid}
             onClick={() => {
               if (step < steps.length - 1) setStep(step + 1);
-              else onComplete({ nome: nome.trim(), salario: sal, dataRecebimento, proximoPagamento, pct: { ...DEFAULT_PCT }, semEntradaInicial });
+              else {
+                const ga = parseFloat(gastoAnterior) || 0;
+                const despesasIniciais = (jaGastou === true && ga > 0)
+                  ? [{ id: Date.now(), descricao: "Gastos anteriores deste período", valor: ga, categoria: "necessidades", data: todayStr() }]
+                  : [];
+                onComplete({ nome: nome.trim(), salario: sal, dataRecebimento, proximoPagamento, pct: { ...DEFAULT_PCT }, semEntradaInicial, despesas: despesasIniciais });
+              }
             }}
             style={{ ...S.btn, opacity: cur.valid ? 1 : 0.35, flex: 1 }}
           >
-            {step < steps.length - 1 ? "Continuar →" : "Ver quanto posso gastar 🚀"}
+            {step < steps.length - 1 ? "Continuar →" : (step === steps.length - 1 && jaGastou === null ? "Saltar e ver o meu número 🚀" : "Ver quanto posso gastar 🚀")}
           </button>
         </div>
       </div>
@@ -321,6 +521,7 @@ function SetupScreen({ onComplete }) {
 function DashboardScreen({ state, onAddExpense, onAddEntrada, onOpenCharts, onOpenGoals, onOpenConvite }) {
   const { salario, dataRecebimento, proximoPagamento, despesas, pct, objectivos = [], entradasExtra = [], semEntradaInicial = false } = state;
   const [showAddMenu, setShowAddMenu] = useState(false);
+  const [showComoCalcula, setShowComoCalcula] = useState(false);
 
   // Entradas extra (13º, bónus, subsídios) deste período somam ao rendimento
   const totalExtra = entradasExtra.reduce((s, e) => s + (e.valor || 0), 0);
@@ -420,9 +621,13 @@ function DashboardScreen({ state, onAddExpense, onAddEntrada, onOpenCharts, onOp
             <div style={{ ...S.heroLabel, color: heroPositive ? "#F59E0B" : "#EF4444" }}>
               {gastoDiario >= 0 ? "PODES GASTAR HOJE" : "LIMITE DIÁRIO EXCEDIDO"}
             </div>
-            <div style={{ ...S.heroAmount, color: heroPositive ? "#F59E0B" : "#EF4444" }}>
-              {gastoDiario >= 0 ? fmtKz(gastoDiario) : fmtKz(Math.abs(gastoDiario))}
-            </div>
+            <button onClick={() => setShowComoCalcula(true)}
+              style={{ background: "transparent", border: "none", cursor: "pointer", fontFamily: "inherit", padding: 0, display: "block", width: "100%" }}>
+              <div style={{ ...S.heroAmount, color: heroPositive ? "#F59E0B" : "#EF4444" }}>
+                {gastoDiario >= 0 ? fmtKz(gastoDiario) : fmtKz(Math.abs(gastoDiario))}
+                <span style={{ fontSize: "0.35em", color: "#6A6050", marginLeft: 8, verticalAlign: "middle" }}>ⓘ</span>
+              </div>
+            </button>
             <div style={{ ...S.heroSub, color: heroPositive ? "#A08850" : "#C06040" }}>
               {gastoDiario >= 0
                 ? `${diasRestantes} dias até ao próximo pagamento`
@@ -521,12 +726,34 @@ function DashboardScreen({ state, onAddExpense, onAddEntrada, onOpenCharts, onOp
           📊 Ver gráficos
         </button>
       </div>
+
+      {/* Modal: como é calculado o número */}
+      {showComoCalcula && (
+        <div onClick={() => setShowComoCalcula(false)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 24, animation: "slideUp 0.2s ease" }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ width: "100%", maxWidth: 420, background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: 20, padding: "26px 22px" }}>
+            <div style={{ fontSize: "1.6em", marginBottom: 10 }}>🌅</div>
+            <div style={{ fontSize: "1.1em", fontWeight: 800, color: "#E8E0D0", marginBottom: 14 }}>Como calculamos o teu número</div>
+            <p style={{ fontSize: "0.9em", color: "#C8C0B0", lineHeight: 1.65, marginBottom: 14 }}>
+              Pegamos no que tens para este período, tiramos o que já gastaste, e dividimos pelos dias que faltam até ao próximo pagamento.
+            </p>
+            <div style={{ background: "#0A0A0A", border: "1px solid #1A1A1A", borderRadius: 12, padding: "14px 16px", fontSize: "0.85em", color: "#A09880", lineHeight: 1.6, marginBottom: 16 }}>
+              O que tens, menos o que já gastaste, a dividir pelos dias que faltam. É o que podes gastar hoje sem ficar sem nada.
+            </div>
+            <p style={{ fontSize: "0.88em", color: "#F59E0B", fontWeight: 600, lineHeight: 1.5, marginBottom: 18 }}>
+              Quanto mais registas o que gastas, mais certo fica o teu número. 🌅
+            </p>
+            <button onClick={() => setShowComoCalcula(false)} style={S.btn}>Percebi</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 // ── SETTINGS (edit salário, datas, percentagens) ──────────────────────────────
-function SettingsScreen({ onBack, onEditarDados, onVerDespesas, onVerEntradas, onOpenConvite }) {
+function SettingsScreen({ state, onToggleNotif, onBack, onEditarDados, onVerDespesas, onVerEntradas, onOpenConvite }) {
   // Número de WhatsApp da empresa
   const WHATSAPP_SUPORTE = "244923933353";
   const abrirSuporte = () => {
@@ -546,6 +773,24 @@ function SettingsScreen({ onBack, onEditarDados, onVerDespesas, onVerEntradas, o
     </button>
   );
 
+  const Toggle = ({ emoji, titulo, sub, ativo, onToggle }) => (
+    <div style={{ background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: 14, padding: "16px 18px", marginBottom: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, flex: 1 }}>
+          <span style={{ fontSize: "1.4em" }}>{emoji}</span>
+          <div>
+            <div style={{ fontSize: "0.95em", fontWeight: 700, color: "#E8E0D0" }}>{titulo}</div>
+            <div style={{ fontSize: "0.78em", color: "#8A8070", marginTop: 2 }}>{sub}</div>
+          </div>
+        </div>
+        <button onClick={onToggle}
+          style={{ width: 46, height: 28, borderRadius: 14, background: ativo ? "#F59E0B" : "#2A2A2A", position: "relative", cursor: "pointer", flexShrink: 0, border: "none", transition: "background 0.2s", padding: 0 }}>
+          <div style={{ position: "absolute", top: 3, left: ativo ? 21 : 3, width: 22, height: 22, borderRadius: "50%", background: ativo ? "#000" : "#666", transition: "left 0.2s" }} />
+        </button>
+      </div>
+    </div>
+  );
+
   return (
     <div style={S.screen}>
       <div style={S.topBar}>
@@ -560,22 +805,24 @@ function SettingsScreen({ onBack, onEditarDados, onVerDespesas, onVerEntradas, o
         <Opcao emoji="🤝" titulo="Comunidade e convites" sub="Convida amigos para a Klaco" onClick={onOpenConvite} cor="#F59E0B" />
         <Opcao emoji="💬" titulo="Suporte e dúvidas" sub="Fala connosco no WhatsApp" onClick={abrirSuporte} cor="#22C55E" />
 
-        {/* NOTIFICAÇÕES — lembrete diário de hábito */}
-        <div style={{ background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: 14, padding: "16px 18px", marginTop: 6 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-              <span style={{ fontSize: "1.4em" }}>🔔</span>
-              <div>
-                <div style={{ fontSize: "0.95em", fontWeight: 700, color: "#E8E0D0" }}>Lembrete diário</div>
-                <div style={{ fontSize: "0.78em", color: "#8A8070", marginTop: 2 }}>«Sabe quanto podes gastar hoje 🌅»</div>
-              </div>
-            </div>
-            {/* [DEV] Ligar ao sistema de notificações push do backend */}
-            <div style={{ width: 44, height: 26, borderRadius: 13, background: "#F59E0B", position: "relative", cursor: "pointer", flexShrink: 0 }}>
-              <div style={{ position: "absolute", top: 3, right: 3, width: 20, height: 20, borderRadius: "50%", background: "#000" }} />
-            </div>
-          </div>
-        </div>
+        {/* NOTIFICAÇÕES — dois consentimentos independentes */}
+        <div style={{ fontSize: "0.72em", fontWeight: 700, letterSpacing: "0.08em", color: "#6A6050", margin: "18px 4px 10px" }}>NOTIFICAÇÕES</div>
+
+        {/* [DEV] Cada interruptor reflecte o consentimento. O backend só envia cada tipo a quem tem o respectivo consentimento ligado. */}
+        <Toggle
+          emoji="🔔"
+          titulo="Lembrete diário"
+          sub="Saber quanto podes gastar hoje 🌅"
+          ativo={state.notifLembrete}
+          onToggle={() => onToggleNotif("notifLembrete")}
+        />
+        <Toggle
+          emoji="📣"
+          titulo="Novidades e promoções"
+          sub="Ofertas e atualizações da Klaco"
+          ativo={state.notifNovidades}
+          onToggle={() => onToggleNotif("notifNovidades")}
+        />
       </div>
     </div>
   );
@@ -1729,7 +1976,56 @@ function AllEntradasScreen({ entradas, onEdit, onDelete, onBack, onAdd }) {
 // ── APP ROOT ──────────────────────────────────────────────────────────────────
 const TRIAL_DAYS = 14;
 
+// ── CONSENTIMENTO DE NOTIFICAÇÕES (aparece uma vez, após o 1º número) ─────────
+function NotifConsentModal({ onGuardar }) {
+  const [lembrete, setLembrete] = useState(false);
+  const [novidades, setNovidades] = useState(false);
+
+  const Check = ({ ativo }) => (
+    <div style={{ width: 24, height: 24, borderRadius: 7, border: `2px solid ${ativo ? "#F59E0B" : "#3A3A3A"}`, background: ativo ? "#F59E0B" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "all 0.15s" }}>
+      {ativo && <span style={{ color: "#000", fontWeight: 800, fontSize: "0.85em" }}>✓</span>}
+    </div>
+  );
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 250, animation: "slideUp 0.3s ease" }}>
+      <div style={{ width: "100%", maxWidth: 480, background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: "24px 24px 0 0", padding: "28px 24px 36px" }}>
+        <div style={{ fontSize: "1.6em", marginBottom: 8 }}>🌅</div>
+        <div style={{ fontSize: "1.2em", fontWeight: 800, color: "#E8E0D0", marginBottom: 6 }}>Como queres que a Klaco fale contigo?</div>
+        <p style={{ fontSize: "0.86em", color: "#8A8070", marginBottom: 22, lineHeight: 1.5 }}>
+          Escolhe o que preferes receber. Podes mudar isto quando quiseres nas Definições.
+        </p>
+
+        <button onClick={() => setLembrete(v => !v)}
+          style={{ width: "100%", display: "flex", alignItems: "center", gap: 14, background: lembrete ? "#F59E0B10" : "#0A0A0A", border: `1px solid ${lembrete ? "#F59E0B" : "#1E1E1E"}`, borderRadius: 14, padding: "16px", cursor: "pointer", fontFamily: "inherit", textAlign: "left", marginBottom: 12 }}>
+          <Check ativo={lembrete} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: "0.95em", fontWeight: 700, color: "#E8E0D0" }}>Lembrete diário</div>
+            <div style={{ fontSize: "0.8em", color: "#8A8070", marginTop: 2 }}>Saber quanto podes gastar hoje 🌅</div>
+          </div>
+        </button>
+
+        <button onClick={() => setNovidades(v => !v)}
+          style={{ width: "100%", display: "flex", alignItems: "center", gap: 14, background: novidades ? "#F59E0B10" : "#0A0A0A", border: `1px solid ${novidades ? "#F59E0B" : "#1E1E1E"}`, borderRadius: 14, padding: "16px", cursor: "pointer", fontFamily: "inherit", textAlign: "left", marginBottom: 22 }}>
+          <Check ativo={novidades} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: "0.95em", fontWeight: 700, color: "#E8E0D0" }}>Novidades e promoções</div>
+            <div style={{ fontSize: "0.8em", color: "#8A8070", marginTop: 2 }}>Ofertas e atualizações da Klaco</div>
+          </div>
+        </button>
+
+        <button onClick={() => onGuardar({ lembrete, novidades })} style={S.btn}>Guardar</button>
+        <p style={{ fontSize: "0.74em", color: "#6A6050", textAlign: "center", marginTop: 12, lineHeight: 1.4 }}>
+          Se não escolheres nada, não recebes notificações. Sem problema.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 const INIT = {
+  conta: false,        // true depois de criar conta / entrar
+  email: "",
   setup: false,
   salario: 0,
   dataRecebimento: todayStr(),
@@ -1745,16 +2041,37 @@ const INIT = {
   inviteCount: 0,
   conquistaMostrada: false,
   conviteDiasMostrados: [],
+  notifLembrete: false,      // consentimento: lembrete diário
+  notifNovidades: false,     // consentimento: novidades e promoções
+  notifPerguntado: false,    // já mostrámos o cartão de consentimento?
+  dicaRegistoMostrada: false, // já mostrámos a dica "regista para o número ficar certo"?
 };
 
 export default function App() {
   const [state, setState] = useState(INIT);
-  const [screen, setScreen] = useState("setup");
+  const [screen, setScreen] = useState("auth");
 
   // Trial day calculation (uses daysSince helper)
   const trialDaysUsed = state.setupDate ? daysSince(state.setupDate) : 0;
   const trialDaysLeft = Math.max(0, TRIAL_DAYS - trialDaysUsed);
   const trialExpired = state.setup && trialDaysUsed >= TRIAL_DAYS;
+
+  const handleDispensarDica = () => {
+    setState(prev => ({ ...prev, dicaRegistoMostrada: true }));
+  };
+
+  const handleToggleNotif = (chave) => {
+    setState(prev => ({ ...prev, [chave]: !prev[chave] }));
+  };
+
+  const handleNotifConsent = ({ lembrete, novidades }) => {
+    setState(prev => ({ ...prev, notifLembrete: lembrete, notifNovidades: novidades, notifPerguntado: true }));
+  };
+
+  const handleAuth = (email) => {
+    setState(prev => ({ ...prev, conta: true, email }));
+    setScreen("setup");
+  };
 
   const handleSetupDone = (data) => {
     setState(prev => ({ ...prev, ...data, setup: true, setupDate: todayStr() }));
@@ -1767,7 +2084,9 @@ export default function App() {
   };
 
   const handleAddExpense = (expense) => {
-    const isPrimeiraDespesa = state.despesas.length === 0;
+    // A despesa inicial "Gastos anteriores deste período" não conta como 1ª despesa real para o convite
+    const despesasReais = state.despesas.filter(d => d.descricao !== "Gastos anteriores deste período");
+    const isPrimeiraDespesa = despesasReais.length === 0;
     const jaViuHoje = state.conviteDiasMostrados?.includes(trialDaysUsed);
     // Dias em que o convite proactivo aparece: dia 0 (1ª despesa), dia 3
     // Dia 7 é coberto pelo ConquistaModal (nível Consciente)
@@ -1863,6 +2182,7 @@ export default function App() {
         ::-webkit-scrollbar-thumb { background: #2A2A2A; }
       `}</style>
 
+      {screen === "auth"       && <AuthScreen onAuth={handleAuth} />}
       {screen === "setup"      && <SetupScreen onComplete={handleSetupDone} />}
       {screen === "dashboard"  && (
         <>
@@ -1875,6 +2195,24 @@ export default function App() {
             onSettings={() => setScreen("settings")}
             onOpenConvite={() => setScreen("convite")}
           />
+          {/* Cartão de consentimento de notificações — aparece uma vez */}
+          {state.setup && !state.notifPerguntado && (
+            <NotifConsentModal onGuardar={handleNotifConsent} />
+          )}
+          {/* Dica de registo — aparece no 2º/3º dia de uso, uma vez */}
+          {state.setup && !state.dicaRegistoMostrada && trialDaysUsed >= 1 && trialDaysUsed <= 3 && (
+            <div style={{ padding: "0 16px 12px" }}>
+              <div style={{ background: "#141000", border: "1px solid #2A2010", borderRadius: 14, padding: "16px", display: "flex", alignItems: "flex-start", gap: 12 }}>
+                <span style={{ fontSize: "1.3em" }}>🌅</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: "0.9em", fontWeight: 700, color: "#E8E0D0", marginBottom: 3 }}>Faz o teu número ficar mais certo</div>
+                  <div style={{ fontSize: "0.82em", color: "#A09880", lineHeight: 1.5 }}>Sempre que gastas, regista. Quanto mais registas, mais real fica o que podes gastar.</div>
+                </div>
+                <button onClick={handleDispensarDica}
+                  style={{ background: "transparent", border: "none", color: "#8A8070", cursor: "pointer", fontSize: "1.1em", flexShrink: 0, fontFamily: "inherit" }}>✕</button>
+              </div>
+            </div>
+          )}
           {/* Chip de contagem do teste — visível durante o trial */}
           {state.setup && !trialExpired && (
             <div style={{ padding: "0 16px 8px", marginTop: -8 }}>
@@ -1887,7 +2225,7 @@ export default function App() {
           )}
         </>
       )}
-      {screen === "settings"   && <SettingsScreen onBack={() => setScreen("dashboard")} onEditarDados={() => setScreen("editarDados")} onVerDespesas={() => setScreen("todasDespesas")} onVerEntradas={() => setScreen("todasEntradas")} onOpenConvite={() => setScreen("convite")} />}
+      {screen === "settings"   && <SettingsScreen state={state} onToggleNotif={handleToggleNotif} onBack={() => setScreen("dashboard")} onEditarDados={() => setScreen("editarDados")} onVerDespesas={() => setScreen("todasDespesas")} onVerEntradas={() => setScreen("todasEntradas")} onOpenConvite={() => setScreen("convite")} />}
       {screen === "editarDados" && <EditarDadosScreen state={state} onSave={handleSettingsSave} onBack={() => setScreen("settings")} />}
       {screen === "convite"     && <ConviteScreen inviteCode={state.inviteCode} inviteCount={state.inviteCount} diasAtivos={diasAtivos} onBack={() => setScreen("dashboard")} />}
       {screen === "add"        && <AddExpenseScreen onSave={handleAddExpense} onBack={() => setScreen("dashboard")}
