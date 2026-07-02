@@ -1,53 +1,37 @@
-KLACO — PROJETO DA APP (versão completa, agora com PWA)
-========================================================
+KLACO — PROJETO DA APP (versão com PWA e pagamento por IBAN temporário)
+========================================================================
 
-ESTRUTURA DOS FICHEIROS:
-
-  src/App.jsx        ← O CÓDIGO PRINCIPAL DA APP (~2.350 linhas).
-                       Login/criar conta, setup, dashboard, número do dia,
-                       despesas, entradas, definições, notificações, pagamento.
-                       O ecrã de login está na função AuthScreen.
-
-  src/index.js       ← Arranca a app.
-
-  public/index.html  ← A casca HTML. JÁ ESTÁ configurada para PWA
-                       (liga o manifest, os ícones e o service worker).
-
-  public/manifest.json      ← Configuração da PWA: nome (Klaco), cores,
-                              ícones, abre em ecrã cheio. JÁ PRONTO.
-
-  public/service-worker.js  ← Torna a app instalável e com offline básico.
-                              JÁ PRONTO. Registado no index.html.
-
-  public/icon-192.png       ← Ícone do sol Klaco (192px). JÁ GERADO.
-  public/icon-512.png       ← Ícone do sol Klaco (512px). JÁ GERADO.
-
-  package.json / vercel.json
+src/App.jsx        ← CÓDIGO PRINCIPAL (~2.400 linhas). Login, setup,
+                     dashboard, despesas, entradas, definições,
+                     notificações e ecrã de pagamento.
+src/index.js       ← Arranca a app.
+public/index.html  ← Casca HTML, já configurada para PWA.
+public/manifest.json / service-worker.js / icon-192.png / icon-512.png
+                   ← PWA: tornam a app instalável no telemóvel. JÁ PRONTOS.
+package.json / vercel.json
 
 -------------------------------------------------
-PWA — A APP JÁ É INSTALÁVEL NO TELEMÓVEL
+PAGAMENTO — MODO TEMPORÁRIO (transferência + WhatsApp)
 
-Está tudo configurado. Quando a app estiver online (deploy no Vercel),
-o utilizador abre o link no telemóvel e o navegador oferece
-"Adicionar ao ecrã principal". Fica o ícone do sol Klaco no telemóvel
-e abre em ecrã cheio, como uma app normal.
+Enquanto o ProxyPay não está activo, o ecrã de pagamento
+(função TrialExpiredScreen no App.jsx) mostra:
+  • Escolha de plano: Anual (5.000 Kz, "2 meses grátis") ou Mensal (500 Kz)
+  • Dados de transferência: Banco BFA, beneficiário SALO. TTF,
+    IBAN AO06.0006.0000.6680.4757.3011.9 (com botão Copiar)
+  • Botão "Já paguei — enviar comprovativo" que abre o WhatsApp
+    (+244 927 677 540) com mensagem pré-escrita.
 
-O QUE O DEV DEVE CONFIRMAR:
-  • A app TEM de ser servida por HTTPS (o Vercel já faz isto). PWA não
-    funciona em http simples.
-  • Testar no telemóvel: abrir o link → menu do navegador →
-    "Adicionar ao ecrã principal" (Android/Chrome) ou
-    "Partilhar → Adicionar ao ecrã principal" (iPhone/Safari).
-  • Os ícones PNG foram gerados a partir do logo. Se quiseres ícones
-    de mais alta qualidade, podes regenerá-los a partir do SVG oficial
-    (klaco-perfil-sol.svg).
+O acesso é activado MANUALMENTE quando o comprovativo chega ao WhatsApp.
+QUANDO O PROXYPAY ESTIVER PRONTO: voltar ao pagamento automático por
+referência (a versão anterior do ecrã está no histórico).
+
+-------------------------------------------------
+PWA — A APP JÁ É INSTALÁVEL. Requer HTTPS (o Vercel faz isto).
+Testar: abrir o link no telemóvel -> "Adicionar ao ecrã principal".
 
 -------------------------------------------------
 O QUE FALTA LIGAR (procurar [DEV] no App.jsx):
-
-1. AUTENTICAÇÃO — Supabase Auth (signUp / signInWithPassword / resetPasswordForEmail)
-2. PAGAMENTO — ProxyPay (gerar referência + webhook que reativa o acesso)
-3. NOTIFICAÇÕES — push, só a quem deu consentimento (notifLembrete / notifNovidades)
-4. GUARDAR DADOS — Supabase (persistir o estado do utilizador)
-
-Procura "[DEV]" no App.jsx para os pontos exatos.
+1. Supabase Auth (criar conta / login / recuperar password)
+2. Notificações push (só a quem deu consentimento)
+3. Guardar dados no Supabase (persistir estado do utilizador)
+(O pagamento está em modo manual por agora — ver acima.)

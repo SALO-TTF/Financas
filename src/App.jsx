@@ -266,15 +266,6 @@ function SetupScreen({ onComplete }) {
   const [dataRecebimento, setDataRecebimento] = useState(todayStr());
   const [proximoPagamento, setProximoPagamento] = useState("");
   const [semEntradaInicial, setSemEntradaInicial] = useState(false); // começou agora
-  const [jaGastou, setJaGastou] = useState(null); // null=não respondeu, true/false
-  const [gastoAnterior, setGastoAnterior] = useState("");
-  const [gastoAnteriorDisplay, setGastoAnteriorDisplay] = useState("");
-
-  const handleGastoAnterior = (raw) => {
-    const digits = raw.replace(/\D/g, "");
-    setGastoAnterior(digits);
-    setGastoAnteriorDisplay(digits === "" ? "" : String(parseInt(digits,10)).replace(/\B(?=(\d{3})+(?!\d))/g, "."));
-  };
 
   const handleSalarioChange = (raw) => {
     const digits = raw.replace(/\D/g, "");
@@ -411,39 +402,6 @@ function SetupScreen({ onComplete }) {
         </div>
       ),
     },
-    // Passo 3 — já gastou parte do salário? (opcional, saltável)
-    {
-      title: "Já gastaste parte deste salário?",
-      subtitle: "Para o teu número começar mais certo. Podes saltar.",
-      valid: true,
-      body: (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <button onClick={() => { setJaGastou(false); setGastoAnterior(""); setGastoAnteriorDisplay(""); }}
-            style={{ display: "flex", alignItems: "center", gap: 12, background: jaGastou === false ? "#F59E0B15" : "#0A0A0A", border: `1px solid ${jaGastou === false ? "#F59E0B" : "#222"}`, borderRadius: 14, padding: "16px", cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
-            <span style={{ fontSize: "1.3em" }}>🌅</span>
-            <div>
-              <div style={{ fontSize: "0.95em", fontWeight: 700, color: "#E8E0D0" }}>Não, começo agora</div>
-              <div style={{ fontSize: "0.8em", color: "#8A8070", marginTop: 2 }}>O número conta a partir de hoje</div>
-            </div>
-          </button>
-          <button onClick={() => setJaGastou(true)}
-            style={{ display: "flex", alignItems: "center", gap: 12, background: jaGastou === true ? "#F59E0B15" : "#0A0A0A", border: `1px solid ${jaGastou === true ? "#F59E0B" : "#222"}`, borderRadius: 14, padding: "16px", cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
-            <span style={{ fontSize: "1.3em" }}>💸</span>
-            <div>
-              <div style={{ fontSize: "0.95em", fontWeight: 700, color: "#E8E0D0" }}>Sim, já gastei algum</div>
-              <div style={{ fontSize: "0.8em", color: "#8A8070", marginTop: 2 }}>Diz-me quanto, mais ou menos</div>
-            </div>
-          </button>
-          {jaGastou === true && (
-            <div style={{ ...S.inputGroup, marginTop: 4 }}>
-              <span style={S.currency}>Kz</span>
-              <input type="text" inputMode="numeric" autoFocus value={gastoAnteriorDisplay}
-                onChange={e => handleGastoAnterior(e.target.value)} placeholder="0" style={S.bigInput} />
-            </div>
-          )}
-        </div>
-      ),
-    },
   ];
 
   const cur = steps[step];
@@ -500,16 +458,12 @@ function SetupScreen({ onComplete }) {
             onClick={() => {
               if (step < steps.length - 1) setStep(step + 1);
               else {
-                const ga = parseFloat(gastoAnterior) || 0;
-                const despesasIniciais = (jaGastou === true && ga > 0)
-                  ? [{ id: Date.now(), descricao: "Gastos anteriores deste período", valor: ga, categoria: "necessidades", data: todayStr() }]
-                  : [];
-                onComplete({ nome: nome.trim(), salario: sal, dataRecebimento, proximoPagamento, pct: { ...DEFAULT_PCT }, semEntradaInicial, despesas: despesasIniciais });
+                onComplete({ nome: nome.trim(), salario: sal, dataRecebimento, proximoPagamento, pct: { ...DEFAULT_PCT }, semEntradaInicial, despesas: [] });
               }
             }}
             style={{ ...S.btn, opacity: cur.valid ? 1 : 0.35, flex: 1 }}
           >
-            {step < steps.length - 1 ? "Continuar →" : (step === steps.length - 1 && jaGastou === null ? "Saltar e ver o meu número 🚀" : "Ver quanto posso gastar 🚀")}
+            {step < steps.length - 1 ? "Continuar →" : "Ver quanto posso gastar 🚀"}
           </button>
         </div>
       </div>
@@ -1068,7 +1022,7 @@ function AddExpenseScreen({ onSave, onBack, despesasAnteriores, saldoRestante })
 }
 
 // ── GOALS SCREEN ─────────────────────────────────────────────────────────────
-function GoalsScreen({ state, onBack, onSaveGoal, onDeleteGoal }) {
+function GoalsScreen({ state, onBack, onSaveGoal, onDeleteGoal, onAddToGoal }) {
   const { salario, objectivos = [], despesas, pct } = state;
   const [showForm, setShowForm] = useState(false);
   const [nome, setNome] = useState("");
@@ -1079,6 +1033,9 @@ function GoalsScreen({ state, onBack, onSaveGoal, onDeleteGoal }) {
   const [poupancaMensalDisplay, setPoupancaMensalDisplay] = useState("");
   const [categoria, setCategoria] = useState("investimento");
   const [emoji, setEmoji] = useState("🎯");
+  const [addandoId, setAddandoId] = useState(null);      // objetivo a receber poupança
+  const [valorAdd, setValorAdd] = useState("");
+  const [valorAddDisplay, setValorAddDisplay] = useState("");
 
   const EMOJIS = ["🎯","🚗","🏠","✈️","📱","💍","🎓","💼","🏖️","🛒","💊","🎁"];
 
@@ -1155,6 +1112,47 @@ function GoalsScreen({ state, onBack, onSaveGoal, onDeleteGoal }) {
                       <span style={{ fontWeight: 700, color: dispCat >= 0 ? "#22C55E" : "#EF4444" }}>{fmtKz(Math.max(0, dispCat))}</span>
                     </div>
                   </div>
+
+                  {/* Registar poupança neste objectivo */}
+                  {pctConcluido < 100 && (
+                    addandoId === obj.id ? (
+                      <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
+                        <input
+                          autoFocus
+                          inputMode="numeric"
+                          value={valorAddDisplay}
+                          onChange={(e) => handleNumInput(e.target.value, setValorAdd, setValorAddDisplay)}
+                          placeholder="Quanto puseste de parte?"
+                          style={{ flex: 1, background: "#0A0A0A", border: "1px solid #2A2A2A", borderRadius: 10, padding: "10px 12px", color: "#DDD", fontSize: "0.85em", fontFamily: "inherit" }}
+                        />
+                        <button
+                          disabled={!valorAdd}
+                          onClick={() => {
+                            onAddToGoal(obj.id, parseInt(valorAdd));
+                            setAddandoId(null); setValorAdd(""); setValorAddDisplay("");
+                          }}
+                          style={{ background: cat?.color, border: "none", borderRadius: 10, padding: "10px 14px", color: "#000", fontWeight: 700, fontSize: "0.82em", cursor: "pointer", fontFamily: "inherit", opacity: valorAdd ? 1 : 0.4 }}>
+                          Guardar
+                        </button>
+                        <button
+                          onClick={() => { setAddandoId(null); setValorAdd(""); setValorAddDisplay(""); }}
+                          style={{ background: "transparent", border: "1px solid #222", borderRadius: 10, padding: "10px 12px", color: "#8A8070", cursor: "pointer", fontFamily: "inherit", fontSize: "0.82em" }}>
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setAddandoId(obj.id)}
+                        style={{ width: "100%", marginTop: 10, background: `${cat?.color}18`, border: `1px solid ${cat?.color}55`, borderRadius: 10, padding: "10px", color: cat?.color, fontWeight: 700, fontSize: "0.82em", cursor: "pointer", fontFamily: "inherit" }}>
+                        + Registar poupança
+                      </button>
+                    )
+                  )}
+                  {pctConcluido >= 100 && (
+                    <div style={{ marginTop: 10, textAlign: "center", fontSize: "0.82em", color: "#22C55E", fontWeight: 700 }}>
+                      🎉 Objectivo atingido!
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -1261,7 +1259,7 @@ function GoalsScreen({ state, onBack, onSaveGoal, onDeleteGoal }) {
 
 // ── CHARTS SCREEN ────────────────────────────────────────────────────────────
 function ChartsScreen({ state, onBack }) {
-  const { salario, despesas, pct } = state;
+  const { salario, despesas, pct, historicoPeriodos = [] } = state;
   const totalGasto = despesas.reduce((s, d) => s + d.valor, 0);
   const saldo = salario - totalGasto;
 
@@ -1271,6 +1269,76 @@ function ChartsScreen({ state, onBack }) {
     gasto: despesas.filter(d => d.categoria === c.id).reduce((s, d) => s + d.valor, 0),
     orcamento: salario * pct[c.id] / 100,
   }));
+
+  // ── PADRÕES DE COMPORTAMENTO (cálculo simples sobre os dados existentes) ──
+  const insights = [];
+  if (despesas.length > 0) {
+    // 1. Categoria onde gastas mais
+    const catMais = [...catTotals].filter(c => c.gasto > 0).sort((a, b) => b.gasto - a.gasto)[0];
+    if (catMais) {
+      insights.push({
+        emoji: catMais.emoji,
+        texto: `Gastas mais em ${catMais.label}`,
+        detalhe: `${fmtKz(catMais.gasto)} — ${totalGasto > 0 ? ((catMais.gasto / totalGasto) * 100).toFixed(0) : 0}% de tudo o que gastaste`,
+        cor: catMais.color,
+      });
+    }
+
+    // 2. Dia da semana em que gastas mais
+    const diasNomes = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+    const porDia = {};
+    despesas.forEach(d => {
+      if (d.data) {
+        const dia = new Date(d.data).getDay();
+        porDia[dia] = (porDia[dia] || 0) + d.valor;
+      }
+    });
+    const diaTop = Object.entries(porDia).sort((a, b) => b[1] - a[1])[0];
+    if (diaTop) {
+      insights.push({
+        emoji: "📅",
+        texto: `${diasNomes[diaTop[0]]} é o teu dia de maior gasto`,
+        detalhe: `Em média sai mais dinheiro neste dia da semana`,
+        cor: "#F59E0B",
+      });
+    }
+
+    // 3. Média de gasto por dia
+    const diasComGasto = new Set(despesas.filter(d => d.data).map(d => new Date(d.data).toDateString())).size || 1;
+    const mediaDia = totalGasto / diasComGasto;
+    insights.push({
+      emoji: "📊",
+      texto: `Gastas em média ${fmtKz(mediaDia)} por dia`,
+      detalhe: `Com base nos dias em que registaste gastos`,
+      cor: "#22C55E",
+    });
+
+    // 4. Comparação com o período anterior
+    if (historicoPeriodos.length > 0) {
+      const anterior = historicoPeriodos[historicoPeriodos.length - 1];
+      if (anterior && typeof anterior.totalGasto === "number") {
+        const dif = totalGasto - anterior.totalGasto;
+        const pctDif = anterior.totalGasto > 0 ? Math.abs((dif / anterior.totalGasto) * 100).toFixed(0) : 0;
+        insights.push({
+          emoji: dif <= 0 ? "📉" : "📈",
+          texto: dif <= 0 ? `Gastaste menos que no período anterior` : `Gastaste mais que no período anterior`,
+          detalhe: `${dif <= 0 ? "-" : "+"}${pctDif}% face ao período passado (${fmtKz(Math.abs(dif))})`,
+          cor: dif <= 0 ? "#22C55E" : "#EF4444",
+        });
+      }
+    }
+
+    // 5. Alerta de orçamento por categoria (a que está mais perto de estourar)
+    const perto = [...catTotals].filter(c => c.orcamento > 0).map(c => ({ ...c, uso: (c.gasto / c.orcamento) * 100 })).sort((a, b) => b.uso - a.uso)[0];
+    if (perto && perto.uso >= 70) {
+      insights.push({
+        emoji: perto.uso >= 100 ? "🔴" : "⚠️",
+        texto: perto.uso >= 100 ? `Já passaste o orçamento de ${perto.label}` : `Estás perto do limite em ${perto.label}`,
+        detalhe: `Já usaste ${perto.uso.toFixed(0)}% do que reservaste para ${perto.label}`,
+        cor: perto.uso >= 100 ? "#EF4444" : "#F59E0B",
+      });
+    }
+  }
 
   // Per description breakdown (top 6)
   const byDesc = {};
@@ -1311,6 +1379,24 @@ function ChartsScreen({ state, onBack }) {
             </div>
           ))}
         </div>
+
+        {/* Padrões de comportamento */}
+        {insights.length > 0 && (
+          <>
+            <div style={{ ...S.sectionTitle, padding: 0, marginBottom: 12 }}>O QUE OS TEUS GASTOS DIZEM</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 22 }}>
+              {insights.map((ins, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 12, background: "#0F0F0F", border: `1px solid ${ins.cor}30`, borderRadius: 12, padding: "12px 14px" }}>
+                  <span style={{ fontSize: "1.3em", flexShrink: 0 }}>{ins.emoji}</span>
+                  <div>
+                    <div style={{ fontSize: "0.85em", fontWeight: 700, color: "#DDD", lineHeight: 1.3 }}>{ins.texto}</div>
+                    <div style={{ fontSize: "0.72em", color: "#8A8070", marginTop: 3, lineHeight: 1.4 }}>{ins.detalhe}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
 
         {/* Donut chart */}
         {despesas.length > 0 ? (
@@ -1401,52 +1487,178 @@ function ChartsScreen({ state, onBack }) {
 
 // ── PRÉ-RESERVA BANNER (shown after saving expense from day 4 onwards) ─────────
 // ── TRIAL EXPIRED SCREEN — Pagamento ─────────────────────────────────────────
-function TrialExpiredScreen() {
-  // [DEV] Substituir pelos dados reais de pagamento por referência
-  const REFERENCIA_PAGAMENTO = "[referência de pagamento aqui]";
-  const ENTIDADE = "[entidade aqui]";
-  const VALOR = "500 Kz";
+function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo }) {
+  // ── MODO TEMPORÁRIO (transferência por IBAN + comprovativo por WhatsApp) ──
+  // [DEV] Quando o ProxyPay estiver activo, voltar ao pagamento automático por referência.
+  const WHATSAPP = "244927677540";
+  const BANCO = "BFA";
+  const IBAN = "AO06.0006.0000.6680.4757.3011.9";
+  const BENEFICIARIO = "SALO. TTF";
 
+  const [etapa, setEtapa] = useState("escolha"); // escolha | pagamento
+  const [plano, setPlano] = useState(planoInicial || "anual");
+  const [copiado, setCopiado] = useState(false);
+
+  const dados = plano === "anual"
+    ? { valor: "5.000 Kz", periodo: "por ano", nome: "Anual" }
+    : { valor: "500 Kz", periodo: "por mês", nome: "Mensal" };
+
+  const copiarIban = () => {
+    const limpo = IBAN.replace(/\./g, "");
+    try { navigator.clipboard.writeText(limpo); } catch (e) {}
+    setCopiado(true);
+  };
+
+  const abrirWhatsApp = () => {
+    const msg = encodeURIComponent("Olá! Segue o comprovativo de pagamento 🙂");
+    window.open(`https://wa.me/${WHATSAPP}?text=${msg}`, "_blank");
+  };
+
+  const enviarComprovativo = () => {
+    abrirWhatsApp();
+    onComprovativo(plano); // marca na memória que já avançou para o envio
+  };
+
+  // ── ECRÃ DE ESPERA — depois de enviar o comprovativo (com saída) ──
+  if (comprovativoEnviado) {
+    return (
+      <div style={S.setup}>
+        <div style={S.setupCard}>
+          <div style={{ fontSize: "3em", marginBottom: 16, textAlign: "center" }}>🌅</div>
+          <div style={{ ...S.logo, marginBottom: 12, textAlign: "center" }}>Estamos a confirmar</div>
+          <p style={{ color: "#C8C0B0", fontSize: "0.95em", lineHeight: 1.7, textAlign: "center", marginBottom: 20 }}>
+            Recebemos o teu pedido. Assim que confirmarmos o teu comprovativo, ativamos o teu acesso — e avisamos-te pelo WhatsApp. 🙂
+          </p>
+          <div style={{ background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: 14, padding: "16px 18px", fontSize: "0.86em", color: "#A09880", lineHeight: 1.6, marginBottom: 20, textAlign: "center" }}>
+            Ainda não enviaste o comprovativo no WhatsApp? Abre a conversa e anexa-o, para ativarmos o teu acesso.
+          </div>
+          <button onClick={abrirWhatsApp}
+            style={{ width: "100%", background: "#25D366", border: "none", borderRadius: 14, padding: "16px", color: "#000", fontWeight: 800, fontSize: "0.98em", cursor: "pointer", fontFamily: "inherit", marginBottom: 12 }}>
+            Abrir o WhatsApp
+          </button>
+          <button onClick={() => { onComprovativo(null); setEtapa("escolha"); }}
+            style={{ width: "100%", background: "transparent", border: "none", color: "#8A8070", fontSize: "0.85em", cursor: "pointer", fontFamily: "inherit" }}>
+            Ainda não paguei / mudar de plano
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── PÁGINA 1 — ESCOLHA DO PLANO ──
+  if (etapa === "escolha") {
+    return (
+      <div style={S.setup}>
+        <div style={S.setupCard}>
+          <div style={{ fontSize: "2.5em", marginBottom: 12 }}>🔓</div>
+          <div style={{ ...S.logo, marginBottom: 8 }}>Os teus 14 dias gratuitos acabaram</div>
+          <p style={{ color: "#A09880", fontSize: "0.92em", lineHeight: 1.6, marginBottom: 22 }}>
+            Já sabes o que é abrir o telemóvel e saber exactamente quanto podes gastar hoje. Continua a gastar sem culpa.
+          </p>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 22 }}>
+            <button onClick={() => setPlano("anual")}
+              style={{ position: "relative", textAlign: "left", background: plano === "anual" ? "#F59E0B12" : "#0A0A0A", border: `2px solid ${plano === "anual" ? "#F59E0B" : "#1E1E1E"}`, borderRadius: 16, padding: "16px 18px", cursor: "pointer", fontFamily: "inherit" }}>
+              <div style={{ position: "absolute", top: -10, right: 16, background: "#F59E0B", color: "#000", fontSize: "0.68em", fontWeight: 800, padding: "3px 10px", borderRadius: 20 }}>2 MESES GRÁTIS</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ width: 22, height: 22, borderRadius: "50%", border: `2px solid ${plano === "anual" ? "#F59E0B" : "#444"}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  {plano === "anual" && <div style={{ width: 11, height: 11, borderRadius: "50%", background: "#F59E0B" }} />}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: "0.95em", fontWeight: 800, color: "#E8E0D0" }}>Anual</div>
+                  <div style={{ fontSize: "0.78em", color: "#8A8070", marginTop: 2 }}>
+                    <span style={{ textDecoration: "line-through" }}>6.000 Kz</span> &nbsp;5.000 Kz por ano
+                  </div>
+                </div>
+              </div>
+            </button>
+
+            <button onClick={() => setPlano("mensal")}
+              style={{ textAlign: "left", background: plano === "mensal" ? "#F59E0B12" : "#0A0A0A", border: `2px solid ${plano === "mensal" ? "#F59E0B" : "#1E1E1E"}`, borderRadius: 16, padding: "16px 18px", cursor: "pointer", fontFamily: "inherit" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ width: 22, height: 22, borderRadius: "50%", border: `2px solid ${plano === "mensal" ? "#F59E0B" : "#444"}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  {plano === "mensal" && <div style={{ width: 11, height: 11, borderRadius: "50%", background: "#F59E0B" }} />}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: "0.95em", fontWeight: 800, color: "#E8E0D0" }}>Mensal</div>
+                  <div style={{ fontSize: "0.78em", color: "#8A8070", marginTop: 2 }}>500 Kz por mês</div>
+                </div>
+              </div>
+            </button>
+          </div>
+
+          <button onClick={() => { setCopiado(false); setEtapa("pagamento"); }} style={S.btn}>
+            Continuar
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── PÁGINA 2 — PAGAMENTO ──
   return (
     <div style={S.setup}>
       <div style={S.setupCard}>
-        <div style={{ fontSize: "2.5em", marginBottom: 12 }}>🔓</div>
-        <div style={{ ...S.logo, marginBottom: 8 }}>Os teus 14 dias terminaram</div>
-        <p style={{ color: "#A09880", fontSize: "0.92em", lineHeight: 1.6, marginBottom: 8 }}>
-          Já sabes o que é abrir o telemóvel e saber exactamente quanto podes gastar hoje.
-        </p>
-        <p style={{ color: "#E8E0D0", fontSize: "0.95em", lineHeight: 1.6, marginBottom: 28, fontWeight: 600 }}>
-          Continua a gastar sem culpa por apenas {VALOR} por mês.
+        <button onClick={() => setEtapa("escolha")}
+          style={{ background: "transparent", border: "none", color: "#8A8070", fontSize: "0.88em", cursor: "pointer", fontFamily: "inherit", marginBottom: 16, padding: 0 }}>
+          ‹ Mudar de plano
+        </button>
+
+        <div style={{ ...S.logo, marginBottom: 4, fontSize: "1.1em" }}>Plano {dados.nome}</div>
+        <p style={{ color: "#A09880", fontSize: "0.88em", marginBottom: 20 }}>
+          Faz a transferência e envia-nos o comprovativo. 🌅
         </p>
 
-        {/* Dados de pagamento por referência */}
-        <div style={{ background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: 16, padding: "20px", marginBottom: 20 }}>
+        {/* Dados de transferência */}
+        <div style={{ background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: 16, padding: "20px", marginBottom: 18 }}>
           <div style={{ fontSize: "0.78em", fontWeight: 700, letterSpacing: "0.08em", color: "#8A8070", marginBottom: 14 }}>
-            PAGA POR REFERÊNCIA
+            FAZ A TRANSFERÊNCIA PARA
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <span style={{ color: "#8A8070", fontSize: "0.88em" }}>Entidade</span>
-            <span style={{ color: "#E8E0D0", fontSize: "1em", fontWeight: 700, fontFamily: "monospace" }}>{ENTIDADE}</span>
+            <span style={{ color: "#8A8070", fontSize: "0.88em" }}>Banco</span>
+            <span style={{ color: "#E8E0D0", fontSize: "1em", fontWeight: 700 }}>{BANCO}</span>
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <span style={{ color: "#8A8070", fontSize: "0.88em" }}>Referência</span>
-            <span style={{ color: "#E8E0D0", fontSize: "1em", fontWeight: 700, fontFamily: "monospace" }}>{REFERENCIA_PAGAMENTO}</span>
+            <span style={{ color: "#8A8070", fontSize: "0.88em" }}>Beneficiário</span>
+            <span style={{ color: "#E8E0D0", fontSize: "1em", fontWeight: 700 }}>{BENEFICIARIO}</span>
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ color: "#8A8070", fontSize: "0.88em", marginBottom: 6 }}>IBAN</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ color: "#E8E0D0", fontSize: "0.92em", fontWeight: 700, fontFamily: "monospace", flex: 1, wordBreak: "break-all" }}>{IBAN}</span>
+              <button onClick={copiarIban}
+                style={{ background: copiado ? "#22C55E" : "#F59E0B", border: "none", borderRadius: 8, padding: "6px 12px", color: "#000", fontWeight: 800, fontSize: "0.78em", cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>
+                {copiado ? "Copiado ✓" : "Copiar"}
+              </button>
+            </div>
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 12, borderTop: "1px solid #1A1A1A" }}>
-            <span style={{ color: "#8A8070", fontSize: "0.88em" }}>Valor</span>
-            <span style={{ color: "#F59E0B", fontSize: "1.2em", fontWeight: 800 }}>{VALOR}</span>
+            <span style={{ color: "#8A8070", fontSize: "0.88em" }}>Valor a transferir</span>
+            <span style={{ color: "#F59E0B", fontSize: "1.2em", fontWeight: 800 }}>{dados.valor} <span style={{ fontSize: "0.6em", color: "#8A8070", fontWeight: 600 }}>{dados.periodo}</span></span>
           </div>
         </div>
 
-        <div style={{ fontSize: "0.85em", color: "#8A8070", lineHeight: 1.6, textAlign: "center", marginBottom: 20 }}>
-          Paga pela app do teu banco, Multicaixa Express ou ATM. O acesso é reactivado automaticamente após o pagamento.
+        {/* 3 passos */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 18 }}>
+          {[
+            "Copia o IBAN e paga pela app do teu banco.",
+            "Faz um print ou descarrega o comprovativo.",
+            "Volta aqui e carrega no botão para enviar.",
+          ].map((txt, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ width: 26, height: 26, borderRadius: "50%", background: "#F59E0B", color: "#000", fontWeight: 800, fontSize: "0.85em", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{i + 1}</div>
+              <span style={{ fontSize: "0.88em", color: "#C8C0B0", lineHeight: 1.4 }}>{txt}</span>
+            </div>
+          ))}
         </div>
 
-        {/* [DEV] Botão opcional: link directo de pagamento se a gateway suportar */}
-        <button style={{ ...S.btn }}
-          onClick={() => { /* [DEV] abrir link de pagamento da gateway aqui */ }}>
-          Já paguei — reactivar acesso
-        </button>
+        {/* Botão de enviar — só aparece depois de copiar o IBAN */}
+        {copiado && (
+          <button onClick={enviarComprovativo}
+            style={{ width: "100%", background: "#25D366", border: "none", borderRadius: 14, padding: "16px", color: "#000", fontWeight: 800, fontSize: "0.98em", cursor: "pointer", fontFamily: "inherit", animation: "slideUp 0.3s ease" }}>
+            Enviar comprovativo pelo WhatsApp
+          </button>
+        )}
       </div>
     </div>
   );
@@ -2045,11 +2257,32 @@ const INIT = {
   notifNovidades: false,     // consentimento: novidades e promoções
   notifPerguntado: false,    // já mostrámos o cartão de consentimento?
   dicaRegistoMostrada: false, // já mostrámos a dica "regista para o número ficar certo"?
+  comprovativoEnviado: false, // pagamento: já abriu o WhatsApp para enviar o comprovativo?
+  planoEscolhido: "anual",    // plano que escolheu no ecrã de pagamento
 };
 
 export default function App() {
-  const [state, setState] = useState(INIT);
+  // Lê o estado guardado no aparelho (memória entre sessões no mesmo dispositivo).
+  // [DEV] Para memória entre APARELHOS (login em qualquer telemóvel), ligar ao Supabase:
+  //       ao entrar, carregar o estado do utilizador da base de dados em vez do localStorage.
+  const carregarEstado = () => {
+    try {
+      const guardado = window.localStorage.getItem("klaco_state");
+      if (guardado) return { ...INIT, ...JSON.parse(guardado) };
+    } catch (e) {}
+    return INIT;
+  };
+
+  const [state, setState] = useState(carregarEstado);
   const [screen, setScreen] = useState("auth");
+
+  // Sempre que o estado muda, guarda no aparelho.
+  // [DEV] Substituir/complementar por gravação no Supabase para sincronizar entre aparelhos.
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("klaco_state", JSON.stringify(state));
+    } catch (e) {}
+  }, [state]);
 
   // Trial day calculation (uses daysSince helper)
   const trialDaysUsed = state.setupDate ? daysSince(state.setupDate) : 0;
@@ -2058,6 +2291,15 @@ export default function App() {
 
   const handleDispensarDica = () => {
     setState(prev => ({ ...prev, dicaRegistoMostrada: true }));
+  };
+
+  const handleComprovativoEnviado = (plano) => {
+    // plano === null significa "ainda não paguei / mudar de plano" — volta ao ecrã de pagamento
+    if (plano === null) {
+      setState(prev => ({ ...prev, comprovativoEnviado: false }));
+      return;
+    }
+    setState(prev => ({ ...prev, comprovativoEnviado: true, planoEscolhido: plano }));
   };
 
   const handleToggleNotif = (chave) => {
@@ -2084,9 +2326,7 @@ export default function App() {
   };
 
   const handleAddExpense = (expense) => {
-    // A despesa inicial "Gastos anteriores deste período" não conta como 1ª despesa real para o convite
-    const despesasReais = state.despesas.filter(d => d.descricao !== "Gastos anteriores deste período");
-    const isPrimeiraDespesa = despesasReais.length === 0;
+    const isPrimeiraDespesa = state.despesas.length === 0;
     const jaViuHoje = state.conviteDiasMostrados?.includes(trialDaysUsed);
     // Dias em que o convite proactivo aparece: dia 0 (1ª despesa), dia 3
     // Dia 7 é coberto pelo ConquistaModal (nível Consciente)
@@ -2133,6 +2373,15 @@ export default function App() {
     setState(prev => ({ ...prev, objectivos: (prev.objectivos || []).filter(g => g.id !== id) }));
   };
 
+  const handleAddToGoal = (id, valor) => {
+    setState(prev => ({
+      ...prev,
+      objectivos: (prev.objectivos || []).map(g =>
+        g.id === id ? { ...g, acumulado: (g.acumulado || 0) + valor } : g
+      ),
+    }));
+  };
+
   // Conquista: mostra modal quando utilizador atinge novo nível
   const diasAtivos = state.setupDate ? daysSince(state.setupDate) : 0;
   const nivelAtual = getNivel(diasAtivos);
@@ -2159,7 +2408,11 @@ export default function App() {
           input { -webkit-appearance: none; }
           @keyframes slideUp { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
         `}</style>
-        <TrialExpiredScreen />
+        <TrialExpiredScreen
+          comprovativoEnviado={state.comprovativoEnviado}
+          planoInicial={state.planoEscolhido}
+          onComprovativo={handleComprovativoEnviado}
+        />
       </div>
     );
   }
@@ -2218,8 +2471,8 @@ export default function App() {
             <div style={{ padding: "0 16px 8px", marginTop: -8 }}>
               <div style={{ fontSize: "0.72em", color: trialDaysLeft <= 2 ? "#EF4444" : "#8A8070", textAlign: "center" }}>
                 {trialDaysLeft <= 2
-                  ? `⏳ Teste termina em ${trialDaysLeft} dia${trialDaysLeft !== 1 ? "s" : ""}`
-                  : `⏱ Versão de teste — ${trialDaysLeft} dias restantes`}
+                  ? `⏳ Os teus 14 dias gratuitos terminam em ${trialDaysLeft} dia${trialDaysLeft !== 1 ? "s" : ""}`
+                  : `🌅 Período gratuito — ${trialDaysLeft} de 14 dias grátis restantes`}
               </div>
             </div>
           )}
@@ -2234,7 +2487,7 @@ export default function App() {
       {screen === "addEntrada" && <AddEntradaScreen onSave={handleAddEntrada} onBack={() => setScreen("dashboard")} />}
       {screen === "todasDespesas" && <AllDespesasScreen despesas={state.despesas} onEdit={handleEditExpense} onDelete={handleDeleteExpense} onBack={() => setScreen("settings")} />}
       {screen === "todasEntradas" && <AllEntradasScreen entradas={state.entradasExtra || []} onEdit={handleEditEntrada} onDelete={handleDeleteEntrada} onBack={() => setScreen("settings")} onAdd={() => setScreen("addEntrada")} />}
-      {screen === "goals"      && <GoalsScreen state={state} onBack={() => setScreen("dashboard")} onSaveGoal={handleSaveGoal} onDeleteGoal={handleDeleteGoal} />}
+      {screen === "goals"      && <GoalsScreen state={state} onBack={() => setScreen("dashboard")} onSaveGoal={handleSaveGoal} onDeleteGoal={handleDeleteGoal} onAddToGoal={handleAddToGoal} />}
       {screen === "charts"     && <ChartsScreen state={state} onBack={() => setScreen("dashboard")} />}
 
       {/* Modal de conquista — dias 1, 7, 14, 30, 60 */}

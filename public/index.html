@@ -5,30 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#080808" />
     <title>Klaco — Agora sabes o que fazer com o teu dinheiro</title>
-
-    <!-- PWA: manifesto e ícones -->
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" href="/icon-192.png" />
-
-    <!-- PWA no iPhone/iPad (a Apple precisa destas tags próprias) -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Klaco" />
     <link rel="apple-touch-icon" href="/icon-192.png" />
-
-    <!-- Descrição (ajuda quando se partilha o link) -->
     <meta name="description" content="Sabe todos os dias quanto podes gastar, sem ficar sem dinheiro antes do próximo pagamento." />
   </head>
   <body style="margin:0;background:#080808;">
     <div id="root"></div>
-
-    <!-- Regista o service worker (faz a app instalável) -->
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", function () {
-          navigator.serviceWorker.register("/service-worker.js").catch(function (e) {
-            console.log("Service worker não registado:", e);
-          });
+          navigator.serviceWorker.register("/service-worker.js").catch(function (e) { console.log("SW:", e); });
         });
       }
     </script>
