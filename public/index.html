@@ -1,26 +1,3 @@
 <!DOCTYPE html>
-<html lang="pt">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#080808" />
-    <title>Klaco — Agora sabes o que fazer com o teu dinheiro</title>
-    <link rel="manifest" href="/manifest.json" />
-    <link rel="icon" href="/icon-192.png" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="Klaco" />
-    <link rel="apple-touch-icon" href="/icon-192.png" />
-    <meta name="description" content="Sabe todos os dias quanto podes gastar, sem ficar sem dinheiro antes do próximo pagamento." />
-  </head>
-  <body style="margin:0;background:#080808;">
-    <div id="root"></div>
-    <script>
-      if ("serviceWorker" in navigator) {
-        window.addEventListener("load", function () {
-          navigator.serviceWorker.register("/service-worker.js").catch(function (e) { console.log("SW:", e); });
-        });
-      }
-    </script>
-  </body>
-</html>
+<html lang="pt"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover"/><meta name="theme-color" content="#080808"/><title>Klaco — Agora sabes o que fazer com o teu dinheiro</title><link rel="manifest" href="/manifest.json"/><link rel="icon" href="/icon-192.png"/><meta name="apple-mobile-web-app-capable" content="yes"/><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/><meta name="apple-mobile-web-app-title" content="Klaco"/><link rel="apple-touch-icon" href="/icon-192.png"/></head>
+<body style="margin:0;background:#080808;"><div id="root"></div><script>if("serviceWorker" in navigator){window.addEventListener("load",function(){navigator.serviceWorker.register("/service-worker.js").catch(function(e){});});}</script></body></html>
