@@ -1,37 +1,4 @@
-KLACO — PROJETO DA APP (versão com PWA e pagamento por IBAN temporário)
-========================================================================
-
-src/App.jsx        ← CÓDIGO PRINCIPAL (~2.400 linhas). Login, setup,
-                     dashboard, despesas, entradas, definições,
-                     notificações e ecrã de pagamento.
-src/index.js       ← Arranca a app.
-public/index.html  ← Casca HTML, já configurada para PWA.
-public/manifest.json / service-worker.js / icon-192.png / icon-512.png
-                   ← PWA: tornam a app instalável no telemóvel. JÁ PRONTOS.
-package.json / vercel.json
-
--------------------------------------------------
-PAGAMENTO — MODO TEMPORÁRIO (transferência + WhatsApp)
-
-Enquanto o ProxyPay não está activo, o ecrã de pagamento
-(função TrialExpiredScreen no App.jsx) mostra:
-  • Escolha de plano: Anual (5.000 Kz, "2 meses grátis") ou Mensal (500 Kz)
-  • Dados de transferência: Banco BFA, beneficiário SALO. TTF,
-    IBAN AO06.0006.0000.6680.4757.3011.9 (com botão Copiar)
-  • Botão "Já paguei — enviar comprovativo" que abre o WhatsApp
-    (+244 927 677 540) com mensagem pré-escrita.
-
-O acesso é activado MANUALMENTE quando o comprovativo chega ao WhatsApp.
-QUANDO O PROXYPAY ESTIVER PRONTO: voltar ao pagamento automático por
-referência (a versão anterior do ecrã está no histórico).
-
--------------------------------------------------
-PWA — A APP JÁ É INSTALÁVEL. Requer HTTPS (o Vercel faz isto).
-Testar: abrir o link no telemóvel -> "Adicionar ao ecrã principal".
-
--------------------------------------------------
-O QUE FALTA LIGAR (procurar [DEV] no App.jsx):
-1. Supabase Auth (criar conta / login / recuperar password)
-2. Notificações push (só a quem deu consentimento)
-3. Guardar dados no Supabase (persistir estado do utilizador)
-(O pagamento está em modo manual por agora — ver acima.)
+KLACO — projeto completo. O código principal está em src/App.jsx.
+public/index.html é só a casca (PWA). Ver Klaco-Para-o-Dev.md para o
+que falta ligar no backend (Supabase, gateway, SMS, etc.).
+Procurar [DEV] no App.jsx para os pontos de ligação.

@@ -1,11 +1,1 @@
-{
-  "name": "Klaco — Agora sabes o que fazer com o teu dinheiro",
-  "short_name": "Klaco",
-  "description": "Sabe todos os dias quanto podes gastar, sem ficar sem dinheiro antes do próximo pagamento.",
-  "start_url": "/", "display": "standalone", "orientation": "portrait",
-  "background_color": "#080808", "theme_color": "#080808", "lang": "pt",
-  "icons": [
-    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
-    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
-  ]
-}
+{"name":"Klaco — Agora sabes o que fazer com o teu dinheiro","short_name":"Klaco","description":"Sabe todos os dias quanto podes gastar.","start_url":"/","display":"standalone","orientation":"portrait","background_color":"#080808","theme_color":"#080808","lang":"pt","icons":[{"src":"/icon-192.png","sizes":"192x192","type":"image/png","purpose":"any maskable"},{"src":"/icon-512.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}]}

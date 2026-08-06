@@ -20,8 +20,11 @@ const addMonths = (dateStr, n) => {
 };
 // Days from today TO a future date (next payment)
 const daysUntil = (dateStr) => {
+  if (!dateStr) return 0;
+  const target = new Date(dateStr); 
+  if (isNaN(target.getTime())) return 0;
+  target.setHours(0,0,0,0);
   const now = new Date(); now.setHours(0,0,0,0);
-  const target = new Date(dateStr); target.setHours(0,0,0,0);
   return Math.max(0, Math.round((target - now) / 86400000));
 };
 // Days elapsed FROM a past date (for trial tracking)
@@ -78,6 +81,11 @@ const SUGESTOES = {
     { nome: "Escola / Propinas",    emoji: "📚" },
     { nome: "Condomínio",           emoji: "🏢" },
     { nome: "Gás",                  emoji: "🔥" },
+    { nome: "Empregada doméstica",  emoji: "🧹" },
+    { nome: "Motorista",            emoji: "🚗" },
+    { nome: "Jardineiro",           emoji: "🌳" },
+    { nome: "Segurança / Guarda",   emoji: "🛡️" },
+    { nome: "Explicador / Professor", emoji: "📖" },
   ],
   qualidade: [
     { nome: "Restaurante",          emoji: "🍽️" },
@@ -115,43 +123,58 @@ function AuthScreen({ onAuth }) {
   const [erro, setErro] = useState("");
   const [recuperado, setRecuperado] = useState(false);
 
-  const emailValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  // Identificador: aceita EMAIL ou TELEFONE (em Angola muitos não têm email).
+  const val = email.trim();
+  const emailValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
+  // Telefone angolano: 9 dígitos (ex: 9XXXXXXXX), com ou sem +244 / espaços
+  const telLimpo = val.replace(/[\s\-()]/g, "").replace(/^\+?244/, "");
+  const telValido = /^9\d{8}$/.test(telLimpo);
+  const idValido = emailValido || telValido;
   const passValida = password.length >= 6;
 
-  // [DEV] Ligar ao Supabase Auth: criar utilizador, validar login, recuperar password.
+  // [DEV] Ligar ao Supabase Auth: criar utilizador, validar login, recuperar acesso.
+  //       Suportar DUAS vias de autenticação:
+  //       - EMAIL:    supabase.auth.signUp / signInWithPassword / resetPasswordForEmail
+  //       - TELEFONE: supabase.auth.signInWithOtp({ phone }) — envia código por SMS.
+  //       Detetar qual foi usado (emailValido vs telValido) e chamar o método certo.
+  //       NOTA: o SMS tem custo por envio — confirmar fornecedor de SMS no Supabase.
   const submeterCriar = () => {
     setErro("");
-    if (!emailValido) { setErro("Escreve um email válido."); return; }
+    if (!idValido) { setErro("Escreve um email ou número de telefone válido."); return; }
     if (!passValida) { setErro("A password precisa de pelo menos 6 caracteres."); return; }
-    // [DEV] Supabase: supabase.auth.signUp({ email, password })
-    onAuth(email);
+    // [DEV] Se emailValido -> signUp({email,password}); se telValido -> signInWithOtp({phone})
+    onAuth(val);
   };
   const submeterEntrar = () => {
     setErro("");
-    if (!emailValido || !passValida) { setErro("Verifica o email e a password."); return; }
-    // [DEV] Supabase: supabase.auth.signInWithPassword({ email, password })
-    onAuth(email);
+    if (!idValido || !passValida) { setErro("Verifica os teus dados e a password."); return; }
+    // [DEV] Email -> signInWithPassword; Telefone -> verificar código SMS (OTP)
+    onAuth(val);
   };
   const submeterRecuperar = () => {
     setErro("");
-    if (!emailValido) { setErro("Escreve o email da tua conta."); return; }
-    // [DEV] Supabase: supabase.auth.resetPasswordForEmail(email)
+    if (!idValido) { setErro("Escreve o email ou telefone da tua conta."); return; }
+    // [DEV] Email -> resetPasswordForEmail; Telefone -> enviar código de recuperação por SMS
     setRecuperado(true);
   };
 
   const campoEmail = (
     <div style={S.field}>
-      <label style={S.label}>EMAIL</label>
-      <input type="email" inputMode="email" autoCapitalize="none" value={email}
-        onChange={e => setEmail(e.target.value)} placeholder="o.teu@email.com" style={S.input} />
+      <label style={S.label}>EMAIL OU TELEFONE</label>
+      <input type="text" inputMode="text" autoCapitalize="none" value={email}
+        onChange={e => setEmail(e.target.value)} placeholder="" style={S.input} />
+      <div style={{ fontSize: "0.72em", color: "#8A8070", marginTop: 6 }}>
+        Podes usar o teu email ou o teu número de telefone.
+      </div>
     </div>
   );
-  const campoPass = (
+  const campoPass = (mostrarDica = false) => (
     <div style={S.field}>
       <label style={S.label}>PALAVRA-PASSE</label>
       <div style={{ position: "relative" }}>
         <input type={showPass ? "text" : "password"} value={password}
-          onChange={e => setPassword(e.target.value)} placeholder="Mínimo 6 caracteres"
+          onChange={e => setPassword(e.target.value)}
+          placeholder={mostrarDica ? "Mínimo 6 caracteres" : ""}
           style={{ ...S.input, paddingRight: 70 }} />
         <button onClick={() => setShowPass(v => !v)}
           style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "transparent", border: "none", color: "#8A8070", fontSize: "0.8em", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>
@@ -184,12 +207,12 @@ function AuthScreen({ onAuth }) {
         {modo === "criar" && (
           <>
             <h2 style={S.setupTitle}>Cria a tua conta</h2>
-            <p style={{ ...S.setupSub, marginBottom: 20 }}>É rápido. Só precisas de um email e uma palavra-passe.</p>
+            <p style={{ ...S.setupSub, marginBottom: 20 }}>É rápido. Só precisas de um email ou telefone e uma palavra-passe.</p>
             {campoEmail}
-            {campoPass}
+            {campoPass(true)}
             {msgErro}
             <button onClick={submeterCriar}
-              style={{ ...S.btn, opacity: (emailValido && passValida) ? 1 : 0.5, marginBottom: 12 }}>
+              style={{ ...S.btn, opacity: (idValido && passValida) ? 1 : 0.5, marginBottom: 12 }}>
               Criar conta
             </button>
             <p style={{ fontSize: "0.76em", color: "#8A8070", lineHeight: 1.5, textAlign: "center", marginBottom: 14 }}>
@@ -209,10 +232,10 @@ function AuthScreen({ onAuth }) {
             <h2 style={S.setupTitle}>Bem-vindo de volta</h2>
             <p style={{ ...S.setupSub, marginBottom: 20 }}>Entra na tua conta para continuar.</p>
             {campoEmail}
-            {campoPass}
+            {campoPass(false)}
             {msgErro}
             <button onClick={submeterEntrar}
-              style={{ ...S.btn, opacity: (emailValido && passValida) ? 1 : 0.5, marginBottom: 10 }}>
+              style={{ ...S.btn, opacity: (idValido && passValida) ? 1 : 0.5, marginBottom: 10 }}>
               Entrar
             </button>
             <button onClick={() => { setModo("recuperar"); setErro(""); setRecuperado(false); }}
@@ -242,7 +265,7 @@ function AuthScreen({ onAuth }) {
                 {campoEmail}
                 {msgErro}
                 <button onClick={submeterRecuperar}
-                  style={{ ...S.btn, opacity: emailValido ? 1 : 0.5, marginBottom: 14 }}>
+                  style={{ ...S.btn, opacity: idValido ? 1 : 0.5, marginBottom: 14 }}>
                   Enviar instruções
                 </button>
                 <button onClick={() => { setModo("entrar"); setErro(""); }}
@@ -266,6 +289,7 @@ function SetupScreen({ onComplete }) {
   const [dataRecebimento, setDataRecebimento] = useState(todayStr());
   const [proximoPagamento, setProximoPagamento] = useState("");
   const [semEntradaInicial, setSemEntradaInicial] = useState(false); // começou agora
+  const [rendimentoVariavel, setRendimentoVariavel] = useState(false); // salário muda de mês para mês
 
   const handleSalarioChange = (raw) => {
     const digits = raw.replace(/\D/g, "");
@@ -340,6 +364,26 @@ function SetupScreen({ onComplete }) {
               ))}
               <div style={{ fontSize: "0.78em", color: "#6A6050", textAlign: "center", marginTop: 4 }}>
                 Podes ajustar estas percentagens nas Definições
+              </div>
+
+              {/* Rendimento fixo ou variável */}
+              <div style={{ marginTop: 8 }}>
+                <div style={{ fontSize: "0.82em", color: "#8A8070", marginBottom: 8 }}>O teu rendimento é sempre igual?</div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={() => setRendimentoVariavel(false)}
+                    style={{ flex: 1, background: !rendimentoVariavel ? "#F59E0B15" : "#0A0A0A", border: `1px solid ${!rendimentoVariavel ? "#F59E0B" : "#222"}`, borderRadius: 12, padding: "12px", cursor: "pointer", fontFamily: "inherit", color: !rendimentoVariavel ? "#F59E0B" : "#8A8070", fontSize: "0.85em", fontWeight: 700 }}>
+                    Fixo, é sempre igual
+                  </button>
+                  <button onClick={() => setRendimentoVariavel(true)}
+                    style={{ flex: 1, background: rendimentoVariavel ? "#F59E0B15" : "#0A0A0A", border: `1px solid ${rendimentoVariavel ? "#F59E0B" : "#222"}`, borderRadius: 12, padding: "12px", cursor: "pointer", fontFamily: "inherit", color: rendimentoVariavel ? "#F59E0B" : "#8A8070", fontSize: "0.85em", fontWeight: 700 }}>
+                    Varia todos os meses
+                  </button>
+                </div>
+                {rendimentoVariavel && (
+                  <div style={{ fontSize: "0.75em", color: "#8A8070", marginTop: 8, lineHeight: 1.5 }}>
+                    🌅 Sempre que receberes, vamos perguntar-te quanto recebeste desta vez, para o teu número ficar certo.
+                  </div>
+                )}
               </div>
             </div>
           ) : (
@@ -458,7 +502,7 @@ function SetupScreen({ onComplete }) {
             onClick={() => {
               if (step < steps.length - 1) setStep(step + 1);
               else {
-                onComplete({ nome: nome.trim(), salario: sal, dataRecebimento, proximoPagamento, pct: { ...DEFAULT_PCT }, semEntradaInicial, despesas: [] });
+                onComplete({ nome: nome.trim(), salario: sal, dataRecebimento, proximoPagamento, pct: { ...DEFAULT_PCT }, semEntradaInicial, rendimentoVariavel, periodoSalarioConfirmado: dataRecebimento, despesas: [] });
               }
             }}
             style={{ ...S.btn, opacity: cur.valid ? 1 : 0.35, flex: 1 }}
@@ -522,8 +566,9 @@ function DashboardScreen({ state, onAddExpense, onAddEntrada, onOpenCharts, onOp
   const acimaDoEsperado = totalComprometido > gastoEsperadoAteHoje;
   const diferencaVsEsperado = Math.abs(totalComprometido - gastoEsperadoAteHoje);
 
-  // Hero tone
-  const heroPositive = gastoDiario >= taxaDiaria;
+  // Hero tone — vermelho SÓ quando o número é negativo (limite excedido).
+  // Reservar poupança para objectivos reduz o número, mas não deve pintá-lo de vermelho.
+  const heroPositive = gastoDiario >= 0;
 
   // Estado de espera: marcou "comecei agora" e o primeiro pagamento ainda não chegou.
   // O salário inserido é a EXPECTATIVA, não algo já recebido — por isso não depende de ser zero.
@@ -578,7 +623,7 @@ function DashboardScreen({ state, onAddExpense, onAddEntrada, onOpenCharts, onOp
             <button onClick={() => setShowComoCalcula(true)}
               style={{ background: "transparent", border: "none", cursor: "pointer", fontFamily: "inherit", padding: 0, display: "block", width: "100%" }}>
               <div style={{ ...S.heroAmount, color: heroPositive ? "#F59E0B" : "#EF4444" }}>
-                {gastoDiario >= 0 ? fmtKz(gastoDiario) : fmtKz(Math.abs(gastoDiario))}
+                {gastoDiario >= 0 ? fmtKz(gastoDiario) : `−${fmtKz(Math.abs(gastoDiario))}`}
                 <span style={{ fontSize: "0.35em", color: "#6A6050", marginLeft: 8, verticalAlign: "middle" }}>ⓘ</span>
               </div>
             </button>
@@ -641,8 +686,15 @@ function DashboardScreen({ state, onAddExpense, onAddEntrada, onOpenCharts, onOp
                 ? <div style={{ fontSize: "0.82em", color: "#8A8070", marginTop: 8, fontWeight: 600 }}>🌅 Em breve saberás</div>
                 : over
                 ? <div style={S.overAlert}>⚠️ Excedeste em {fmtKz(totalUsado - orc)}</div>
-                : <div style={{ fontSize: "0.82em", color: "#22C55E", marginTop: 8, fontWeight: 600 }}>
-                    ✓ {fmtKz(restante)} disponível
+                : <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
+                    <span style={{ fontSize: "0.82em", color: "#22C55E", fontWeight: 600 }}>
+                      ✓ {fmtKz(restante)} disponível
+                    </span>
+                    {diasRestantes > 0 && restante > 0 && (
+                      <span style={{ fontSize: "0.75em", color: "#8A8070" }}>
+                        hoje: {fmtKz(restante / diasRestantes)}
+                      </span>
+                    )}
                   </div>
               }
             </div>
@@ -658,7 +710,7 @@ function DashboardScreen({ state, onAddExpense, onAddEntrada, onOpenCharts, onOp
           <div style={{ background: "#0D0D0D", border: "1px solid #F59E0B40", borderRadius: 14, overflow: "hidden", animation: "slideUp 0.2s ease" }}>
             <button onClick={() => { setShowAddMenu(false); onAddExpense(); }}
               style={{ width: "100%", background: "transparent", border: "none", borderBottom: "1px solid #1A1A1A", padding: "16px", color: "#E8E0D0", fontWeight: 700, fontSize: "0.95em", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 10, textAlign: "left" }}>
-              <span style={{ fontSize: "1.2em" }}>🛒</span> Registar uma despesa
+              <span style={{ fontSize: "1.2em" }}>🛒</span> Novo registo (gasto ou investimento)
             </button>
             <button onClick={() => { setShowAddMenu(false); onAddEntrada(); }}
               style={{ width: "100%", background: "transparent", border: "none", borderBottom: "1px solid #1A1A1A", padding: "16px", color: "#E8E0D0", fontWeight: 700, fontSize: "0.95em", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 10, textAlign: "left" }}>
@@ -707,7 +759,57 @@ function DashboardScreen({ state, onAddExpense, onAddEntrada, onOpenCharts, onOp
 }
 
 // ── SETTINGS (edit salário, datas, percentagens) ──────────────────────────────
-function SettingsScreen({ state, onToggleNotif, onBack, onEditarDados, onVerDespesas, onVerEntradas, onOpenConvite }) {
+function EtiquetasScreen({ etiquetasCustom = {}, onDelete, onBack }) {
+  const temAlguma = Object.values(etiquetasCustom).some(arr => (arr || []).length > 0);
+  return (
+    <div style={S.screen}>
+      <div style={S.topBar}>
+        <button onClick={onBack} style={S.backBtn}>← Voltar</button>
+        <div style={S.screenTitle}>As minhas etiquetas</div>
+        <div style={{ width: 60 }} />
+      </div>
+      <div style={{ padding: "0 16px" }}>
+        <p style={{ fontSize: "0.85em", color: "#8A8070", lineHeight: 1.6, marginBottom: 20 }}>
+          Estas são as descrições que guardaste. Aparecem como sugestão quando lanças uma despesa, para não teres de escrever sempre o mesmo. 🏷️
+        </p>
+        {!temAlguma && (
+          <div style={{ textAlign: "center", padding: "40px 20px", color: "#6A6050" }}>
+            <div style={{ fontSize: "2.5em", marginBottom: 12 }}>🏷️</div>
+            <div style={{ fontSize: "0.9em", lineHeight: 1.6 }}>
+              Ainda não guardaste nenhuma etiqueta.<br />
+              Quando lançares uma despesa com um nome novo, podes guardá-lo aqui.
+            </div>
+          </div>
+        )}
+        {CATS.map(cat => {
+          const lista = etiquetasCustom[cat.id] || [];
+          if (lista.length === 0) return null;
+          return (
+            <div key={cat.id} style={{ marginBottom: 24 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                <span style={{ fontSize: "1.1em" }}>{cat.emoji}</span>
+                <span style={{ fontSize: "0.8em", fontWeight: 700, color: cat.color, letterSpacing: "0.04em" }}>{cat.label.toUpperCase()}</span>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {lista.map((nome, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, background: "#0F0F0F", border: "1px solid #1E1E1E", borderRadius: 20, padding: "8px 12px 8px 14px" }}>
+                    <span style={{ fontSize: "0.85em", color: "#DDD" }}>{nome}</span>
+                    <button onClick={() => onDelete(cat.id, nome)}
+                      style={{ background: "transparent", border: "none", color: "#8A8070", cursor: "pointer", fontFamily: "inherit", fontSize: "1em", padding: 0, lineHeight: 1 }}>
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function SettingsScreen({ state, onToggleNotif, onBack, onEditarDados, onVerDespesas, onVerEntradas, onOpenConvite, onVerEtiquetas }) {
   // Número de WhatsApp da empresa
   const WHATSAPP_SUPORTE = "244923933353";
   const abrirSuporte = () => {
@@ -755,6 +857,7 @@ function SettingsScreen({ state, onToggleNotif, onBack, onEditarDados, onVerDesp
       <div style={{ padding: "0 16px" }}>
         <Opcao emoji="👤" titulo="Editar os meus dados" sub="Nome, rendimento, datas e percentagens" onClick={onEditarDados} />
         <Opcao emoji="🛒" titulo="Todas as despesas" sub="Ver, editar ou apagar" onClick={onVerDespesas} />
+        <Opcao emoji="🏷️" titulo="As minhas etiquetas" sub="Descrições guardadas para lançar mais rápido" onClick={onVerEtiquetas} />
         <Opcao emoji="💰" titulo="Todas as entradas" sub="13º, bónus, subsídios e mais" onClick={onVerEntradas} />
         <Opcao emoji="🤝" titulo="Comunidade e convites" sub="Convida amigos para a Klaco" onClick={onOpenConvite} cor="#F59E0B" />
         <Opcao emoji="💬" titulo="Suporte e dúvidas" sub="Fala connosco no WhatsApp" onClick={abrirSuporte} cor="#22C55E" />
@@ -878,27 +981,38 @@ function EditarDadosScreen({ state, onSave, onBack }) {
 }
 
 // ── ADD EXPENSE (with smart suggestions + custom library) ─────────────────────
-function AddExpenseScreen({ onSave, onBack, despesasAnteriores, saldoRestante }) {
+function AddExpenseScreen({ onSave, onBack, despesasAnteriores, saldoRestante, etiquetasCustom = {} }) {
   const [descricao, setDescricao] = useState("");
   const [valor, setValor] = useState("");
   const [valorDisplay, setValorDisplay] = useState("");
   const [categoria, setCategoria] = useState("necessidades");
   const [data, setData] = useState(todayStr());
   const [showSugg, setShowSugg] = useState(true);
+  const [guardarEtiqueta, setGuardarEtiqueta] = useState(false);
 
-  // Build suggestion list: pre-defined + user's own past descriptions (deduplicated)
+  // Build suggestion list: pre-defined + custom saved labels + user's own past descriptions
   const pastNames = [...new Set(despesasAnteriores.map(d => d.descricao))];
   const catSugg = SUGESTOES[categoria] || [];
   const predefinedNames = catSugg.map(s => s.nome);
-  // User's past expenses in this category not already in predefined
+  // Etiquetas guardadas pelo utilizador nesta categoria (nas configurações ou ao gravar)
+  const savedLabels = (etiquetasCustom[categoria] || [])
+    .filter(n => !predefinedNames.includes(n))
+    .map(n => ({ nome: n, emoji: "🏷️" }));
+  const savedNames = savedLabels.map(s => s.nome);
+  // User's past expenses in this category not already in predefined or saved
   const userCustom = pastNames
     .filter(n => despesasAnteriores.some(d => d.categoria === categoria && d.descricao === n))
-    .filter(n => !predefinedNames.includes(n))
+    .filter(n => !predefinedNames.includes(n) && !savedNames.includes(n))
     .map(n => ({ nome: n, emoji: "📝" }));
-  const allSugg = [...catSugg, ...userCustom];
+  const allSugg = [...catSugg, ...savedLabels, ...userCustom];
   const filtered = descricao.trim()
     ? allSugg.filter(s => s.nome.toLowerCase().includes(descricao.toLowerCase()))
     : allSugg;
+
+  // A descrição atual é nova (não está em sugestões nem guardada)?
+  const descricaoNova = descricao.trim() &&
+    !predefinedNames.some(n => n.toLowerCase() === descricao.trim().toLowerCase()) &&
+    !savedNames.some(n => n.toLowerCase() === descricao.trim().toLowerCase());
 
   const cat = CATS.find(c => c.id === categoria);
   const v = parseFloat(valor) || 0;
@@ -913,7 +1027,7 @@ function AddExpenseScreen({ onSave, onBack, despesasAnteriores, saldoRestante })
     <div style={S.screen}>
       <div style={S.topBar}>
         <button onClick={onBack} style={S.backBtn}>← Voltar</button>
-        <div style={S.screenTitle}>Nova despesa</div>
+        <div style={S.screenTitle}>Novo registo</div>
         <div style={{ width: 60 }} />
       </div>
       <div style={{ padding: "0 16px" }}>
@@ -937,7 +1051,7 @@ function AddExpenseScreen({ onSave, onBack, despesasAnteriores, saldoRestante })
 
         {/* Description with suggestions */}
         <div style={S.field}>
-          <label style={S.label}>O QUE GASTASTE?</label>
+          <label style={S.label}>O QUE FOI?</label>
           <input value={descricao}
             onChange={e => { setDescricao(e.target.value); setShowSugg(true); }}
             onFocus={() => setShowSugg(true)}
@@ -1010,11 +1124,22 @@ function AddExpenseScreen({ onSave, onBack, despesasAnteriores, saldoRestante })
           <input type="date" value={data} onChange={e => setData(e.target.value)} style={S.dateInput} />
         </div>
 
+        {/* Guardar como etiqueta — só se a descrição for nova */}
+        {descricaoNova && (
+          <button onClick={() => setGuardarEtiqueta(v => !v)}
+            style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", background: guardarEtiqueta ? "#F59E0B15" : "#0A0A0A", border: `1px solid ${guardarEtiqueta ? "#F59E0B" : "#1E1E1E"}`, borderRadius: 12, padding: "12px 14px", cursor: "pointer", fontFamily: "inherit", marginBottom: 16, textAlign: "left" }}>
+            <div style={{ width: 20, height: 20, borderRadius: 5, border: `2px solid ${guardarEtiqueta ? "#F59E0B" : "#444"}`, background: guardarEtiqueta ? "#F59E0B" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              {guardarEtiqueta && <span style={{ color: "#000", fontWeight: 800, fontSize: "0.7em" }}>✓</span>}
+            </div>
+            <span style={{ fontSize: "0.85em", color: "#C8C0B0" }}>🏷️ Guardar "{descricao.trim()}" para a próxima vez</span>
+          </button>
+        )}
+
         <button
           disabled={!descricao || !valor || v <= 0}
-          onClick={() => onSave({ id: Date.now(), descricao, valor: v, categoria, data })}
+          onClick={() => onSave({ id: Date.now(), descricao: descricao.trim(), valor: v, categoria, data }, guardarEtiqueta && descricaoNova)}
           style={{ ...S.btn, opacity: descricao && v > 0 ? 1 : 0.4 }}>
-          Guardar despesa
+          Guardar registo
         </button>
       </div>
     </div>
@@ -1022,7 +1147,7 @@ function AddExpenseScreen({ onSave, onBack, despesasAnteriores, saldoRestante })
 }
 
 // ── GOALS SCREEN ─────────────────────────────────────────────────────────────
-function GoalsScreen({ state, onBack, onSaveGoal, onDeleteGoal, onAddToGoal }) {
+function GoalsScreen({ state, onBack, onSaveGoal, onDeleteGoal, onAddToGoal, onUpdateGoal }) {
   const { salario, objectivos = [], despesas, pct } = state;
   const [showForm, setShowForm] = useState(false);
   const [nome, setNome] = useState("");
@@ -1036,8 +1161,44 @@ function GoalsScreen({ state, onBack, onSaveGoal, onDeleteGoal, onAddToGoal }) {
   const [addandoId, setAddandoId] = useState(null);      // objetivo a receber poupança
   const [valorAdd, setValorAdd] = useState("");
   const [valorAddDisplay, setValorAddDisplay] = useState("");
+  const [editandoId, setEditandoId] = useState(null);    // objetivo em edição (null = criar novo)
+  const [acumulacaoAuto, setAcumulacaoAuto] = useState(false); // acumula a poupança mensal sozinho
+  const [acumuladoEdit, setAcumuladoEdit] = useState("");
+  const [acumuladoEditDisplay, setAcumuladoEditDisplay] = useState("");
+
+  const abrirEdicao = (obj) => {
+    setEditandoId(obj.id);
+    setNome(obj.nome);
+    setEmoji(obj.emoji);
+    setValorAlvo(String(obj.valorAlvo));
+    setValorAlvoDisplay(String(obj.valorAlvo).replace(/\B(?=(\d{3})+(?!\d))/g, "."));
+    setPoupancaMensal(String(obj.poupancaMensal));
+    setPoupancaMensalDisplay(String(obj.poupancaMensal).replace(/\B(?=(\d{3})+(?!\d))/g, "."));
+    setCategoria(obj.categoria);
+    setAcumulacaoAuto(!!obj.acumulacaoAuto);
+    setAcumuladoEdit(String(obj.acumulado || 0));
+    setAcumuladoEditDisplay(String(obj.acumulado || 0).replace(/\B(?=(\d{3})+(?!\d))/g, "."));
+    setShowForm(true);
+  };
+
+  const limparForm = () => {
+    setShowForm(false); setEditandoId(null);
+    setNome(""); setValorAlvo(""); setValorAlvoDisplay("");
+    setPoupancaMensal(""); setPoupancaMensalDisplay(""); setEmoji("🎯");
+    setAcumulacaoAuto(false);
+    setAcumuladoEdit(""); setAcumuladoEditDisplay("");
+  };
 
   const EMOJIS = ["🎯","🚗","🏠","✈️","📱","💍","🎓","💼","🏖️","🛒","💊","🎁"];
+  const SUGESTOES_OBJ = [
+    { nome: "Fundo de emergência", emoji: "🏥" },
+    { nome: "Viagem", emoji: "✈️" },
+    { nome: "Comprar carro", emoji: "🚗" },
+    { nome: "Casa", emoji: "🏠" },
+    { nome: "Estudos", emoji: "🎓" },
+    { nome: "Casamento", emoji: "💍" },
+    { nome: "Telemóvel", emoji: "📱" },
+  ];
 
   const handleNumInput = (raw, setSt, setDisp) => {
     const digits = raw.replace(/\D/g, "");
@@ -1078,11 +1239,18 @@ function GoalsScreen({ state, onBack, onSaveGoal, onDeleteGoal, onAddToGoal }) {
                       <span style={{ fontSize: "1.8em" }}>{obj.emoji}</span>
                       <div>
                         <div style={{ fontWeight: 700, fontSize: "0.95em", color: "#DDD" }}>{obj.nome}</div>
-                        <div style={{ fontSize: "0.72em", color: "#8A8070", marginTop: 2 }}>{cat?.emoji} {cat?.label}</div>
+                        <div style={{ fontSize: "0.72em", color: "#8A8070", marginTop: 2 }}>
+                          {cat?.emoji} {cat?.label}
+                          {obj.acumulacaoAuto && <span style={{ color: "#22C55E", marginLeft: 6 }}>· 🔄 Automático</span>}
+                        </div>
                       </div>
                     </div>
-                    <button onClick={() => onDeleteGoal(obj.id)}
-                      style={{ background: "transparent", border: "none", color: "#333", cursor: "pointer", fontSize: "1em" }}>✕</button>
+                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      <button onClick={() => abrirEdicao(obj)}
+                        style={{ background: "transparent", border: "none", color: "#8A8070", cursor: "pointer", fontSize: "0.95em", padding: "4px 6px" }}>✎</button>
+                      <button onClick={() => onDeleteGoal(obj.id)}
+                        style={{ background: "transparent", border: "none", color: "#333", cursor: "pointer", fontSize: "1em", padding: "4px 6px" }}>✕</button>
+                    </div>
                   </div>
 
                   {/* Progress bar */}
@@ -1161,13 +1329,13 @@ function GoalsScreen({ state, onBack, onSaveGoal, onDeleteGoal, onAddToGoal }) {
 
         {/* Add goal form */}
         {!showForm ? (
-          <button onClick={() => setShowForm(true)}
+          <button onClick={() => { limparForm(); setShowForm(true); }}
             style={{ width: "100%", background: "#0F0F0F", border: "1px dashed #2A2A2A", borderRadius: 14, padding: "16px", color: "#F59E0B", fontWeight: 700, fontSize: "0.92em", cursor: "pointer", fontFamily: "inherit" }}>
             + Adicionar objectivo
           </button>
         ) : (
           <div style={{ background: "#0F0F0F", border: "1px solid #1A1A1A", borderRadius: 16, padding: "18px" }}>
-            <div style={{ fontWeight: 700, color: "#DDD", marginBottom: 16, fontSize: "0.95em" }}>Novo objectivo</div>
+            <div style={{ fontWeight: 700, color: "#DDD", marginBottom: 16, fontSize: "0.95em" }}>{editandoId ? "Editar objectivo" : "Novo objectivo"}</div>
 
             {/* Emoji picker */}
             <div style={S.field}>
@@ -1177,6 +1345,19 @@ function GoalsScreen({ state, onBack, onSaveGoal, onDeleteGoal, onAddToGoal }) {
                   <button key={e} onClick={() => setEmoji(e)}
                     style={{ background: emoji === e ? "#F59E0B20" : "#111", border: `1px solid ${emoji === e ? "#F59E0B" : "#222"}`, borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontSize: "1.3em" }}>
                     {e}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={S.field}>
+              <label style={S.label}>SUGESTÕES</label>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {SUGESTOES_OBJ.map(s => (
+                  <button key={s.nome} onClick={() => { setNome(s.nome); setEmoji(s.emoji); }}
+                    style={{ display: "flex", alignItems: "center", gap: 5, background: nome === s.nome ? "#F59E0B20" : "#111", border: `1px solid ${nome === s.nome ? "#F59E0B" : "#222"}`, borderRadius: 20, padding: "7px 12px", cursor: "pointer", fontFamily: "inherit" }}>
+                    <span style={{ fontSize: "0.95em" }}>{s.emoji}</span>
+                    <span style={{ fontSize: "0.78em", color: nome === s.nome ? "#F59E0B" : "#C8C0B0", fontWeight: 600 }}>{s.nome}</span>
                   </button>
                 ))}
               </div>
@@ -1227,20 +1408,52 @@ function GoalsScreen({ state, onBack, onSaveGoal, onDeleteGoal, onAddToGoal }) {
               </div>
             </div>
 
+            {/* Já acumulado — só na edição, para corrigir enganos */}
+            {editandoId && (
+              <div style={S.field}>
+                <label style={S.label}>JÁ ACUMULADO (Kz)</label>
+                <div style={{ position: "relative" }}>
+                  <span style={S.inputPrefix}>Kz</span>
+                  <input type="text" inputMode="numeric" value={acumuladoEditDisplay}
+                    onChange={e => handleNumInput(e.target.value, setAcumuladoEdit, setAcumuladoEditDisplay)}
+                    placeholder="0" style={{ ...S.input, paddingLeft: 44 }} />
+                </div>
+                <div style={{ fontSize: "0.72em", color: "#8A8070", marginTop: 6 }}>
+                  Corrige aqui se te enganaste no valor guardado.
+                </div>
+              </div>
+            )}
+
+            {/* Acumulação automática */}
+            <button onClick={() => setAcumulacaoAuto(v => !v)}
+              style={{ display: "flex", alignItems: "flex-start", gap: 10, width: "100%", background: acumulacaoAuto ? "#22C55E15" : "#0A0A0A", border: `1px solid ${acumulacaoAuto ? "#22C55E" : "#1E1E1E"}`, borderRadius: 12, padding: "13px 14px", cursor: "pointer", fontFamily: "inherit", marginBottom: 16, textAlign: "left" }}>
+              <div style={{ width: 20, height: 20, borderRadius: 5, border: `2px solid ${acumulacaoAuto ? "#22C55E" : "#444"}`, background: acumulacaoAuto ? "#22C55E" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1 }}>
+                {acumulacaoAuto && <span style={{ color: "#000", fontWeight: 800, fontSize: "0.7em" }}>✓</span>}
+              </div>
+              <div>
+                <div style={{ fontSize: "0.85em", fontWeight: 700, color: "#DDD" }}>Acumular automaticamente</div>
+                <div style={{ fontSize: "0.72em", color: "#8A8070", marginTop: 2, lineHeight: 1.4 }}>A cada novo salário, somamos sozinhos a poupança mensal a este objectivo. Podes sempre ajustar à mão.</div>
+              </div>
+            </button>
+
             <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={() => setShowForm(false)}
+              <button onClick={limparForm}
                 style={{ flex: 1, background: "transparent", border: "1px solid #222", borderRadius: 12, padding: "13px", color: "#8A8070", cursor: "pointer", fontFamily: "inherit" }}>
                 Cancelar
               </button>
               <button
                 disabled={!nome || !valorAlvo || !poupancaMensal}
                 onClick={() => {
-                  onSaveGoal({ id: Date.now(), nome, emoji, valorAlvo: parseInt(valorAlvo), poupancaMensal: parseInt(poupancaMensal), categoria, acumulado: 0 });
-                  setShowForm(false);
-                  setNome(""); setValorAlvo(""); setValorAlvoDisplay(""); setPoupancaMensal(""); setPoupancaMensalDisplay(""); setEmoji("🎯");
+                  const dados = { nome, emoji, valorAlvo: parseInt(valorAlvo), poupancaMensal: parseInt(poupancaMensal), categoria, acumulacaoAuto };
+                  if (editandoId) {
+                    onUpdateGoal(editandoId, { ...dados, acumulado: parseInt(acumuladoEdit) || 0 });
+                  } else {
+                    onSaveGoal({ id: Date.now(), ...dados, acumulado: 0 });
+                  }
+                  limparForm();
                 }}
                 style={{ flex: 2, background: "#F59E0B", border: "none", borderRadius: 12, padding: "13px", color: "#000", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", opacity: nome && valorAlvo && poupancaMensal ? 1 : 0.4 }}>
-                Guardar objectivo
+                {editandoId ? "Guardar alterações" : "Guardar objectivo"}
               </button>
             </div>
           </div>
@@ -1713,17 +1926,19 @@ function ConviteScreen({ inviteCode, inviteCount, diasAtivos, onBack }) {
   const [copied, setCopied] = useState(false);
   const nivel = getNivel(diasAtivos);
   const nextNivel = NIVEIS[NIVEIS.indexOf(nivel) + 1];
-  const link = `https://app.minhasfinancas.ao/entrar?ref=${inviteCode}`;
+  // [DEV] Substituir pelo domínio real da Klaco. O ?ref= identifica quem convidou,
+  //       para creditar automaticamente 1 mês grátis quando o convidado subscrever.
+  const link = `https://klaco.ao/entrar?ref=${inviteCode}`;
+  const msgPartilha = `Descobri a Klaco — diz-me todos os dias quanto posso gastar, sem culpa. Entra pelo meu convite: ${link}`;
 
   const handleCopy = () => {
-    const msg = `Descobri este app que me diz exactamente quanto posso gastar hoje — sem culpa, sem restrições. Experimenta: ${link}`;
-    navigator.clipboard?.writeText(msg).catch(() => {});
+    navigator.clipboard?.writeText(msgPartilha).catch(() => {});
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
   };
 
   const handleWhatsApp = () => {
-    const msg = encodeURIComponent(`Descobri este app que me diz exactamente quanto posso gastar hoje — sem culpa, sem restrições. Experimenta: ${link}`);
+    const msg = encodeURIComponent(msgPartilha);
     window.open(`https://wa.me/?text=${msg}`, "_blank");
   };
 
@@ -1731,7 +1946,7 @@ function ConviteScreen({ inviteCode, inviteCount, diasAtivos, onBack }) {
     <div style={S.screen}>
       <div style={S.topBar}>
         <button onClick={onBack} style={S.backBtn}>← Voltar</button>
-        <div style={S.screenTitle}>Convida amigos</div>
+        <div style={S.screenTitle}>Convida e ganha</div>
         <div style={{ width: 60 }} />
       </div>
       <div style={{ padding: "0 16px 32px" }}>
@@ -1774,6 +1989,21 @@ function ConviteScreen({ inviteCode, inviteCount, diasAtivos, onBack }) {
           </div>
         )}
 
+        {/* Recompensa — 1 mês grátis quando o amigo subscrever */}
+        <div style={{
+          background: "linear-gradient(135deg,#0A1A0A,#081208)",
+          border: "1px solid #22C55E40",
+          borderRadius: 16, padding: "18px 18px", marginBottom: 20,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+            <span style={{ fontSize: "1.6em" }}>🎁</span>
+            <div style={{ fontSize: "1em", fontWeight: 800, color: "#22C55E" }}>Convida 1 amigo, ganha 1 mês grátis</div>
+          </div>
+          <div style={{ fontSize: "0.83em", color: "#A09880", lineHeight: 1.6 }}>
+            Quando um amigo entra pelo teu convite e <strong style={{ color: "#C8C0B0" }}>paga a subscrição</strong>, ganhas <strong style={{ color: "#22C55E" }}>1 mês grátis</strong>. Aplicamos na tua próxima renovação. 🌅
+          </div>
+        </div>
+
         {/* O que partilhas */}
         <div style={{ fontSize: "0.68em", fontWeight: 700, letterSpacing: "0.1em", color: "#6A6050", marginBottom: 10 }}>
           A MENSAGEM QUE PARTILHAS
@@ -1783,7 +2013,7 @@ function ConviteScreen({ inviteCode, inviteCount, diasAtivos, onBack }) {
           borderRadius: 14, padding: "16px", marginBottom: 16,
         }}>
           <div style={{ fontSize: "0.88em", color: "#A09880", lineHeight: 1.6 }}>
-            "Descobri este app que me diz exactamente quanto posso gastar hoje — sem culpa, sem restrições."
+            "Descobri a Klaco — diz-me todos os dias quanto posso gastar, sem culpa. Entra pelo meu convite:"
           </div>
           <div style={{ marginTop: 10, fontSize: "0.75em", color: "#6A6050", fontFamily: "monospace", wordBreak: "break-all" }}>
             {link}
@@ -1912,11 +2142,12 @@ function ConquistaModal({ nivel, diasAtivos, onPartilhar, onFechar }) {
 
 // ── MODAL CONVITE PÓS-PRIMEIRA-DESPESA ───────────────────────────────────────
 function ConviteMomentoModal({ inviteCode, onFechar }) {
-  const link = `https://app.minhasfinancas.ao/entrar?ref=${inviteCode}`;
+  // [DEV] Substituir pelo domínio real da Klaco.
+  const link = `https://klaco.ao/entrar?ref=${inviteCode}`;
 
   const handleWhatsApp = () => {
     const msg = encodeURIComponent(
-      `Descobri este app que me diz exactamente quanto posso gastar hoje — sem culpa, sem restrições. Experimenta: ${link}`
+      `Descobri a Klaco — diz-me todos os dias quanto posso gastar, sem culpa. Entra pelo meu convite: ${link}`
     );
     window.open(`https://wa.me/?text=${msg}`, "_blank");
     onFechar();
@@ -1940,8 +2171,11 @@ function ConviteMomentoModal({ inviteCode, onFechar }) {
         <div style={{ fontSize: "1.2em", fontWeight: 800, color: "#E8E0D0", marginBottom: 10, lineHeight: 1.3 }}>
           Conheces alguém que precisava de saber isto?
         </div>
-        <div style={{ fontSize: "0.92em", color: "#8A8070", lineHeight: 1.6, marginBottom: 28 }}>
+        <div style={{ fontSize: "0.92em", color: "#8A8070", lineHeight: 1.6, marginBottom: 16 }}>
           A maioria das pessoas não sabe quanto pode gastar hoje. Tu já sabes. Partilha com alguém que importa.
+        </div>
+        <div style={{ background: "#0A1A0A", border: "1px solid #22C55E30", borderRadius: 12, padding: "12px 14px", marginBottom: 24, fontSize: "0.82em", color: "#A09880", lineHeight: 1.5 }}>
+          🎁 E quando essa pessoa subscrever, ganhas <strong style={{ color: "#22C55E" }}>1 mês grátis</strong>.
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -2189,6 +2423,115 @@ function AllEntradasScreen({ entradas, onEdit, onDelete, onBack, onAdd }) {
 const TRIAL_DAYS = 14;
 
 // ── CONSENTIMENTO DE NOTIFICAÇÕES (aparece uma vez, após o 1º número) ─────────
+function ConfirmarSalarioModal({ salarioAnterior, onConfirmar }) {
+  const [valor, setValor] = useState(String(salarioAnterior || ""));
+  const [display, setDisplay] = useState(salarioAnterior ? String(salarioAnterior).replace(/\B(?=(\d{3})+(?!\d))/g, ".") : "");
+  const handleInput = (raw) => {
+    const digits = raw.replace(/\D/g, "");
+    setValor(digits);
+    setDisplay(digits === "" ? "" : String(parseInt(digits, 10)).replace(/\B(?=(\d{3})+(?!\d))/g, "."));
+  };
+  return (
+    <div style={S.modalOverlay}>
+      <div style={S.modalCard}>
+        <div style={{ fontSize: "2.2em", textAlign: "center", marginBottom: 12 }}>🌅</div>
+        <div style={{ ...S.logo, fontSize: "1.15em", textAlign: "center", marginBottom: 8 }}>Novo pagamento chegou</div>
+        <p style={{ fontSize: "0.9em", color: "#A09880", lineHeight: 1.6, textAlign: "center", marginBottom: 20 }}>
+          Quanto recebeste desta vez? Confirma ou ajusta, para o teu número do dia ficar certo.
+        </p>
+        <div style={S.inputGroup}>
+          <span style={S.currency}>Kz</span>
+          <input autoFocus type="text" inputMode="numeric" value={display}
+            onChange={e => handleInput(e.target.value)} placeholder="0" style={S.bigInput} />
+        </div>
+        <button
+          disabled={!valor || parseInt(valor) <= 0}
+          onClick={() => onConfirmar(parseInt(valor))}
+          style={{ ...S.btn, marginTop: 20, opacity: valor && parseInt(valor) > 0 ? 1 : 0.4 }}>
+          Confirmar rendimento
+        </button>
+        <button onClick={() => onConfirmar(salarioAnterior)}
+          style={{ width: "100%", background: "transparent", border: "none", color: "#8A8070", fontSize: "0.83em", cursor: "pointer", fontFamily: "inherit", marginTop: 10 }}>
+          Recebi o mesmo de sempre
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function InstalarAppModal({ deferredPrompt, onInstalado, onFechar }) {
+  const [vista, setVista] = useState("escolha"); // escolha | iphone
+
+  const instalarAndroid = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      try {
+        const res = await deferredPrompt.userChoice;
+        if (res && res.outcome === "accepted") { onInstalado(); return; }
+      } catch (e) {}
+      onFechar();
+    } else {
+      // Sem evento de instalação disponível (ex.: já instalada, ou navegador sem suporte)
+      onFechar();
+    }
+  };
+
+  // ── Ecrã da instrução do iPhone ──
+  if (vista === "iphone") {
+    return (
+      <div style={S.modalOverlay}>
+        <div style={S.modalCard}>
+          <button onClick={() => setVista("escolha")}
+            style={{ background: "transparent", border: "none", color: "#8A8070", fontSize: "0.88em", cursor: "pointer", fontFamily: "inherit", marginBottom: 14, padding: 0 }}>
+            ‹ Voltar
+          </button>
+          <div style={{ ...S.logo, fontSize: "1.15em", textAlign: "center", marginBottom: 16 }}>Instalar no iPhone</div>
+          <div style={{ background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: 14, padding: "16px 18px", marginBottom: 18 }}>
+            <div style={{ fontSize: "0.84em", color: "#C8C0B0", lineHeight: 1.7, display: "flex", flexDirection: "column", gap: 10 }}>
+              <div>1. Toca em <strong style={{ color: "#F59E0B" }}>Partilhar</strong> (o quadrado com a seta ⬆️, na barra de baixo do Safari).</div>
+              <div>2. Desce e escolhe <strong style={{ color: "#F59E0B" }}>“Adicionar ao ecrã principal”</strong>.</div>
+              <div>3. Toca em <strong style={{ color: "#F59E0B" }}>Adicionar</strong>. Pronto! 🌅</div>
+            </div>
+          </div>
+          <button onClick={onFechar}
+            style={{ width: "100%", background: "transparent", border: "none", color: "#8A8070", fontSize: "0.85em", cursor: "pointer", fontFamily: "inherit" }}>
+            Já percebi
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Ecrã de escolha (dois botões) ──
+  return (
+    <div style={S.modalOverlay}>
+      <div style={S.modalCard}>
+        <div style={{ fontSize: "2.4em", textAlign: "center", marginBottom: 12 }}>📲</div>
+        <div style={{ ...S.logo, fontSize: "1.15em", textAlign: "center", marginBottom: 10 }}>
+          Leva a Klaco contigo
+        </div>
+        <p style={{ fontSize: "0.9em", color: "#A09880", lineHeight: 1.6, textAlign: "center", marginBottom: 22 }}>
+          Instala a Klaco no teu telemóvel e abre-a com um toque, como qualquer app — sem ir ao navegador. Escolhe o teu telemóvel:
+        </p>
+
+        <button onClick={instalarAndroid}
+          style={{ width: "100%", background: "#F59E0B", border: "none", borderRadius: 14, padding: "15px", color: "#000", fontWeight: 800, fontSize: "0.95em", cursor: "pointer", fontFamily: "inherit", marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+          🤖 Instalar no Android
+        </button>
+        <button onClick={() => setVista("iphone")}
+          style={{ width: "100%", background: "#0D0D0D", border: "1px solid #2A2A2A", borderRadius: 14, padding: "15px", color: "#E8E0D0", fontWeight: 800, fontSize: "0.95em", cursor: "pointer", fontFamily: "inherit", marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+           Instalar no iPhone
+        </button>
+
+        <button onClick={onFechar}
+          style={{ width: "100%", background: "transparent", border: "none", color: "#8A8070", fontSize: "0.85em", cursor: "pointer", fontFamily: "inherit", marginTop: 4 }}>
+          Agora não
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function NotifConsentModal({ onGuardar }) {
   const [lembrete, setLembrete] = useState(false);
   const [novidades, setNovidades] = useState(false);
@@ -2258,7 +2601,13 @@ const INIT = {
   notifPerguntado: false,    // já mostrámos o cartão de consentimento?
   dicaRegistoMostrada: false, // já mostrámos a dica "regista para o número ficar certo"?
   comprovativoEnviado: false, // pagamento: já abriu o WhatsApp para enviar o comprovativo?
+  etiquetasCustom: {}, // descrições personalizadas por categoria: { necessidades: ["..."], ... }
   planoEscolhido: "anual",    // plano que escolheu no ecrã de pagamento
+  rendimentoVariavel: false,  // true se o salário muda de mês para mês
+  periodoSalarioConfirmado: null, // qual dataRecebimento já teve o salário confirmado
+  appInstalada: false,        // a pessoa já instalou a app (PWA)?
+  instalarPedidos: 0,         // quantas vezes já mostrámos o convite para instalar
+  aberturas: 0,               // número de vezes que abriu a app (para o timing do lembrete)
 };
 
 export default function App() {
@@ -2283,6 +2632,31 @@ export default function App() {
       window.localStorage.setItem("klaco_state", JSON.stringify(state));
     } catch (e) {}
   }, [state]);
+
+  // Acumulação automática dos objectivos: uma vez por período, soma a poupança mensal.
+  // O identificador do período é a data de recebimento em vigor. Cada objectivo guarda
+  // o último período em que já acumulou, para nunca somar duas vezes no mesmo período.
+  // [DEV] Com o Supabase, este controlo deve viver no servidor para ser à prova de tudo.
+  useEffect(() => {
+    if (!state.setup) return;
+    const periodoAtual = state.dataRecebimento || "";
+    if (!periodoAtual) return;
+    const objs = state.objectivos || [];
+    const precisaAcumular = objs.some(g =>
+      g.acumulacaoAuto && g.ultimoPeriodoAuto !== periodoAtual && (g.acumulado || 0) < g.valorAlvo
+    );
+    if (!precisaAcumular) return;
+    setState(prev => ({
+      ...prev,
+      objectivos: (prev.objectivos || []).map(g => {
+        if (g.acumulacaoAuto && g.ultimoPeriodoAuto !== periodoAtual && (g.acumulado || 0) < g.valorAlvo) {
+          const novoAcumulado = Math.min(g.valorAlvo, (g.acumulado || 0) + (g.poupancaMensal || 0));
+          return { ...g, acumulado: novoAcumulado, ultimoPeriodoAuto: periodoAtual };
+        }
+        return g;
+      }),
+    }));
+  }, [state.setup, state.dataRecebimento, state.objectivos]);
 
   // Trial day calculation (uses daysSince helper)
   const trialDaysUsed = state.setupDate ? daysSince(state.setupDate) : 0;
@@ -2325,7 +2699,7 @@ export default function App() {
     setScreen("dashboard");
   };
 
-  const handleAddExpense = (expense) => {
+  const handleAddExpense = (expense, guardarEtiqueta) => {
     const isPrimeiraDespesa = state.despesas.length === 0;
     const jaViuHoje = state.conviteDiasMostrados?.includes(trialDaysUsed);
     // Dias em que o convite proactivo aparece: dia 0 (1ª despesa), dia 3
@@ -2333,13 +2707,25 @@ export default function App() {
     const diaDeConvite = (isPrimeiraDespesa && trialDaysUsed === 0) ||
                          (trialDaysUsed === 3 && !jaViuHoje);
 
-    setState(prev => ({
-      ...prev,
-      despesas: [...prev.despesas, expense],
-      conviteDiasMostrados: diaDeConvite
-        ? [...(prev.conviteDiasMostrados || []), trialDaysUsed]
-        : prev.conviteDiasMostrados || [],
-    }));
+    setState(prev => {
+      // Guardar etiqueta personalizada, se pedido e ainda não existir
+      let etiquetas = prev.etiquetasCustom || {};
+      if (guardarEtiqueta) {
+        const cat = expense.categoria;
+        const atuais = etiquetas[cat] || [];
+        if (!atuais.some(n => n.toLowerCase() === expense.descricao.toLowerCase())) {
+          etiquetas = { ...etiquetas, [cat]: [...atuais, expense.descricao] };
+        }
+      }
+      return {
+        ...prev,
+        despesas: [...prev.despesas, expense],
+        etiquetasCustom: etiquetas,
+        conviteDiasMostrados: diaDeConvite
+          ? [...(prev.conviteDiasMostrados || []), trialDaysUsed]
+          : prev.conviteDiasMostrados || [],
+      };
+    });
 
     setScreen("dashboard");
 
@@ -2382,12 +2768,76 @@ export default function App() {
     }));
   };
 
+  const handleDeleteEtiqueta = (catId, nome) => {
+    setState(prev => ({
+      ...prev,
+      etiquetasCustom: {
+        ...(prev.etiquetasCustom || {}),
+        [catId]: (prev.etiquetasCustom?.[catId] || []).filter(n => n !== nome),
+      },
+    }));
+  };
+
+  const handleUpdateGoal = (id, dados) => {
+    setState(prev => ({
+      ...prev,
+      objectivos: (prev.objectivos || []).map(g =>
+        g.id === id ? { ...g, ...dados } : g
+      ),
+    }));
+  };
+
+  const handleConfirmarSalario = (novoValor) => {
+    setState(prev => ({
+      ...prev,
+      salario: novoValor,
+      periodoSalarioConfirmado: prev.dataRecebimento,
+    }));
+  };
+
   // Conquista: mostra modal quando utilizador atinge novo nível
   const diasAtivos = state.setupDate ? daysSince(state.setupDate) : 0;
   const nivelAtual = getNivel(diasAtivos);
   const [conquistaVista, setConquistaVista] = useState(false);
   const [conquistaModal, setConquistaModal] = useState(false);
   const [conviteMomento, setConviteMomento] = useState(false); // modal após 1ª despesa
+  const [deferredPrompt, setDeferredPrompt] = useState(null);   // evento de instalar (Android)
+  const [mostrarInstalar, setMostrarInstalar] = useState(false); // modal de instalar visível agora
+
+  // Captura o evento de instalação (Android/Chrome) e deteta se já está instalada
+  useEffect(() => {
+    const onBIP = (e) => { e.preventDefault(); setDeferredPrompt(e); };
+    window.addEventListener("beforeinstallprompt", onBIP);
+    // Se já corre como app instalada (standalone), marcar e nunca mais pedir
+    const jaInstalada = window.matchMedia?.("(display-mode: standalone)")?.matches
+      || window.navigator.standalone === true;
+    if (jaInstalada && !state.appInstalada) {
+      setState(prev => ({ ...prev, appInstalada: true }));
+    }
+    // Detetar instalação concluída
+    const onInstalled = () => setState(prev => ({ ...prev, appInstalada: true }));
+    window.addEventListener("appinstalled", onInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onBIP);
+      window.removeEventListener("appinstalled", onInstalled);
+    };
+  }, []);
+
+  // Conta uma abertura por sessão (para o timing do lembrete de instalar)
+  useEffect(() => {
+    if (state.setup) {
+      setState(prev => ({ ...prev, aberturas: (prev.aberturas || 0) + 1 }));
+    }
+  }, [state.setup]);
+
+  const handleInstalado = () => {
+    setState(prev => ({ ...prev, appInstalada: true }));
+    setMostrarInstalar(false);
+  };
+  const handleFecharInstalar = () => {
+    setState(prev => ({ ...prev, instalarPedidos: (prev.instalarPedidos || 0) + 1 }));
+    setMostrarInstalar(false);
+  };
 
   useEffect(() => {
     if (!state.setup) return;
@@ -2397,6 +2847,30 @@ export default function App() {
       setConquistaVista(true);
     }
   }, [diasAtivos, state.setup]);
+
+  // Decide quando mostrar o convite para instalar — UM aviso por sessão, com prioridade.
+  // Prioridade: confirmar salário > convite pós-despesa > notificações > INSTALAR.
+  // 1º pedido: logo após o setup. Reforços: na 3ª e 6ª abertura online, depois pára.
+  useEffect(() => {
+    if (!state.setup || state.appInstalada) return;
+    // Não empilhar com outros modais que tenham prioridade real neste momento.
+    // (As notificações NÃO bloqueiam — o instalar aparece primeiro, e as notificações vêm depois.)
+    const outroAvisoAtivo =
+      (state.rendimentoVariavel && state.periodoSalarioConfirmado !== state.dataRecebimento) ||
+      conviteMomento || conquistaModal;
+    if (outroAvisoAtivo) return;
+
+    const ab = state.aberturas || 0;
+    const pedidos = state.instalarPedidos || 0;
+    // 1º pedido após setup (1ª abertura); reforço na 3ª e 6ª; máximo 3 vezes.
+    const deveMostrar =
+      (pedidos === 0) ||
+      (pedidos === 1 && ab >= 3) ||
+      (pedidos === 2 && ab >= 6);
+    if (deveMostrar) setMostrarInstalar(true);
+  }, [state.setup, state.appInstalada, state.aberturas, state.instalarPedidos,
+      conviteMomento, conquistaModal,
+      state.rendimentoVariavel, state.periodoSalarioConfirmado, state.dataRecebimento]);
 
   // If trial expired, show expired screen
   if (trialExpired && screen !== "setup") {
@@ -2418,8 +2892,8 @@ export default function App() {
   }
 
   // Which tabs show the bottom nav
-  const showNav = ["dashboard","goals","settings","charts","convite","editarDados","todasDespesas","todasEntradas","addEntrada"].includes(screen);
-  const navActive = ["goals","settings","editarDados","todasDespesas","todasEntradas"].includes(screen) ? "settings" : ["goals"].includes(screen) ? screen : "dashboard";
+  const showNav = ["dashboard","goals","settings","charts","convite","editarDados","todasDespesas","todasEntradas","addEntrada","etiquetas"].includes(screen);
+  const navActive = ["goals","settings","editarDados","todasDespesas","todasEntradas","etiquetas"].includes(screen) ? "settings" : ["goals"].includes(screen) ? screen : "dashboard";
 
   return (
     <div style={S.app}>
@@ -2448,8 +2922,13 @@ export default function App() {
             onSettings={() => setScreen("settings")}
             onOpenConvite={() => setScreen("convite")}
           />
-          {/* Cartão de consentimento de notificações — aparece uma vez */}
-          {state.setup && !state.notifPerguntado && (
+          {/* Confirmação de rendimento — só para quem tem rendimento variável, quando muda o período */}
+          {state.setup && state.rendimentoVariavel && state.periodoSalarioConfirmado !== state.dataRecebimento && (
+            <ConfirmarSalarioModal salarioAnterior={state.salario} onConfirmar={handleConfirmarSalario} />
+          )}
+          {/* Cartão de consentimento de notificações — só DEPOIS de tratar o convite de instalar */}
+          {state.setup && !state.notifPerguntado && !mostrarInstalar &&
+           (state.appInstalada || (state.instalarPedidos || 0) >= 1) && (
             <NotifConsentModal onGuardar={handleNotifConsent} />
           )}
           {/* Dica de registo — aparece no 2º/3º dia de uso, uma vez */}
@@ -2478,16 +2957,18 @@ export default function App() {
           )}
         </>
       )}
-      {screen === "settings"   && <SettingsScreen state={state} onToggleNotif={handleToggleNotif} onBack={() => setScreen("dashboard")} onEditarDados={() => setScreen("editarDados")} onVerDespesas={() => setScreen("todasDespesas")} onVerEntradas={() => setScreen("todasEntradas")} onOpenConvite={() => setScreen("convite")} />}
+      {screen === "settings"   && <SettingsScreen state={state} onToggleNotif={handleToggleNotif} onBack={() => setScreen("dashboard")} onEditarDados={() => setScreen("editarDados")} onVerDespesas={() => setScreen("todasDespesas")} onVerEntradas={() => setScreen("todasEntradas")} onOpenConvite={() => setScreen("convite")} onVerEtiquetas={() => setScreen("etiquetas")} />}
+      {screen === "etiquetas"  && <EtiquetasScreen etiquetasCustom={state.etiquetasCustom || {}} onDelete={handleDeleteEtiqueta} onBack={() => setScreen("settings")} />}
       {screen === "editarDados" && <EditarDadosScreen state={state} onSave={handleSettingsSave} onBack={() => setScreen("settings")} />}
       {screen === "convite"     && <ConviteScreen inviteCode={state.inviteCode} inviteCount={state.inviteCount} diasAtivos={diasAtivos} onBack={() => setScreen("dashboard")} />}
       {screen === "add"        && <AddExpenseScreen onSave={handleAddExpense} onBack={() => setScreen("dashboard")}
                                     despesasAnteriores={state.despesas}
+                                    etiquetasCustom={state.etiquetasCustom || {}}
                                     saldoRestante={state.salario - state.despesas.reduce((s,d) => s+d.valor, 0)} />}
       {screen === "addEntrada" && <AddEntradaScreen onSave={handleAddEntrada} onBack={() => setScreen("dashboard")} />}
       {screen === "todasDespesas" && <AllDespesasScreen despesas={state.despesas} onEdit={handleEditExpense} onDelete={handleDeleteExpense} onBack={() => setScreen("settings")} />}
       {screen === "todasEntradas" && <AllEntradasScreen entradas={state.entradasExtra || []} onEdit={handleEditEntrada} onDelete={handleDeleteEntrada} onBack={() => setScreen("settings")} onAdd={() => setScreen("addEntrada")} />}
-      {screen === "goals"      && <GoalsScreen state={state} onBack={() => setScreen("dashboard")} onSaveGoal={handleSaveGoal} onDeleteGoal={handleDeleteGoal} onAddToGoal={handleAddToGoal} />}
+      {screen === "goals"      && <GoalsScreen state={state} onBack={() => setScreen("dashboard")} onSaveGoal={handleSaveGoal} onDeleteGoal={handleDeleteGoal} onAddToGoal={handleAddToGoal} onUpdateGoal={handleUpdateGoal} />}
       {screen === "charts"     && <ChartsScreen state={state} onBack={() => setScreen("dashboard")} />}
 
       {/* Modal de conquista — dias 1, 7, 14, 30, 60 */}
@@ -2505,6 +2986,15 @@ export default function App() {
         <ConviteMomentoModal
           inviteCode={state.inviteCode}
           onFechar={() => setConviteMomento(false)}
+        />
+      )}
+
+      {/* Convite para instalar a app (PWA) — só um aviso por sessão, nunca empilhado */}
+      {mostrarInstalar && !conviteMomento && !conquistaModal && (
+        <InstalarAppModal
+          deferredPrompt={deferredPrompt}
+          onInstalado={handleInstalado}
+          onFechar={handleFecharInstalar}
         />
       )}
 
@@ -2529,6 +3019,10 @@ export default function App() {
 const S = {
   app: { minHeight: "100vh", background: "#080808", fontFamily: "'Plus Jakarta Sans', sans-serif", color: "#E8E0D0", maxWidth: 480, margin: "0 auto" },
   screen: { minHeight: "100vh", overflowY: "auto", paddingBottom: 100, animation: "slideUp 0.25s ease" },
+
+  // Modais — overlay centrado sobre fundo escuro, com scroll se o conteúdo for alto
+  modalOverlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", padding: "20px", zIndex: 1000, overflowY: "auto" },
+  modalCard: { width: "100%", maxWidth: 400, maxHeight: "90vh", overflowY: "auto", background: "#0F0F0F", border: "1px solid #222", borderRadius: 22, padding: "26px 22px", margin: "auto" },
 
   // Setup
   setup: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, background: "#080808" },
