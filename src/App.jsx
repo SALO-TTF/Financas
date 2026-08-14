@@ -809,7 +809,7 @@ function EtiquetasScreen({ etiquetasCustom = {}, onDelete, onBack }) {
   );
 }
 
-function SettingsScreen({ state, onToggleNotif, onBack, onEditarDados, onVerDespesas, onVerEntradas, onOpenConvite, onVerEtiquetas }) {
+function SettingsScreen({ state, onToggleNotif, onBack, onEditarDados, onVerDespesas, onVerEntradas, onOpenConvite, onVerEtiquetas, onOpenPlano, planoSub, onOpenAvaliacao }) {
   // Número de WhatsApp da empresa
   const WHATSAPP_SUPORTE = "244923933353";
   const abrirSuporte = () => {
@@ -855,11 +855,13 @@ function SettingsScreen({ state, onToggleNotif, onBack, onEditarDados, onVerDesp
         <div style={{ width: 60 }} />
       </div>
       <div style={{ padding: "0 16px" }}>
+        <Opcao emoji="⭐" titulo="Meu plano" sub={planoSub} onClick={onOpenPlano} cor="#F59E0B" />
         <Opcao emoji="👤" titulo="Editar os meus dados" sub="Nome, rendimento, datas e percentagens" onClick={onEditarDados} />
         <Opcao emoji="🛒" titulo="Todas as despesas" sub="Ver, editar ou apagar" onClick={onVerDespesas} />
         <Opcao emoji="🏷️" titulo="As minhas etiquetas" sub="Descrições guardadas para lançar mais rápido" onClick={onVerEtiquetas} />
         <Opcao emoji="💰" titulo="Todas as entradas" sub="13º, bónus, subsídios e mais" onClick={onVerEntradas} />
         <Opcao emoji="🤝" titulo="Comunidade e convites" sub="Convida amigos para a Klaco" onClick={onOpenConvite} cor="#F59E0B" />
+        <Opcao emoji="⭐" titulo="Deixar a tua opinião" sub="Avalia a Klaco e diz-nos o que achas" onClick={onOpenAvaliacao} />
         <Opcao emoji="💬" titulo="Suporte e dúvidas" sub="Fala connosco no WhatsApp" onClick={abrirSuporte} cor="#22C55E" />
 
         {/* NOTIFICAÇÕES — dois consentimentos independentes */}
@@ -1700,9 +1702,40 @@ function ChartsScreen({ state, onBack }) {
 
 // ── PRÉ-RESERVA BANNER (shown after saving expense from day 4 onwards) ─────────
 // ── TRIAL EXPIRED SCREEN — Pagamento ─────────────────────────────────────────
-function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo }) {
+function AnelContagem({ diasRestantes, total = 14 }) {
+  const frac = Math.max(0, Math.min(1, diasRestantes / total));
+  const r = 34, circ = 2 * Math.PI * r;
+  const preenchido = circ * frac;
+  // Cor aquece nos últimos 3 dias (âmbar → vermelho)
+  const critico = diasRestantes <= 3;
+  const cor = critico ? "#EF4444" : "#F59E0B";
+  return (
+    <div style={{ position: "relative", width: 84, height: 84, flexShrink: 0 }}>
+      <svg width="84" height="84" style={{ transform: "rotate(-90deg)" }}>
+        <circle cx="42" cy="42" r={r} fill="none" stroke="#1E1E1E" strokeWidth="6" />
+        <circle cx="42" cy="42" r={r} fill="none" stroke={cor} strokeWidth="6"
+          strokeLinecap="round"
+          strokeDasharray={`${preenchido} ${circ}`}
+          style={{ transition: "stroke-dasharray 0.5s ease, stroke 0.3s ease" }} />
+      </svg>
+      <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ fontSize: "1.7em", fontWeight: 800, color: cor, lineHeight: 1 }}>{diasRestantes}</div>
+        <div style={{ fontSize: "0.55em", color: "#8A8070", fontWeight: 700, letterSpacing: "0.05em", marginTop: 1 }}>
+          {diasRestantes === 1 ? "DIA" : "DIAS"}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo, dentroDoTeste = false, diasRestantes = 0, onFechar }) {
   // ── MODO TEMPORÁRIO (transferência por IBAN + comprovativo por WhatsApp) ──
-  // [DEV] Quando o ProxyPay estiver activo, voltar ao pagamento automático por referência.
+  // [DEV] Quando o gateway estiver activo, voltar ao pagamento automático por referência.
+  // [DEV] REGRA DE PREÇO (aplicada na cobrança/renovação pelo backend):
+  //   - Pagar DENTRO dos 14 dias grátis: 1º pagamento com 50% desconto
+  //       · mensal: 500 Kz no 1º mês, depois 1.000 Kz/mês
+  //       · anual:  5.000 Kz no 1º ano, depois 10.000 Kz/ano
+  //   - Pagar DEPOIS dos 14 dias: preço cheio (1.000 mensal / 10.000 anual)
   const WHATSAPP = "244927677540";
   const BANCO = "BFA";
   const IBAN = "AO06.0006.0000.6680.4757.3011.9";
@@ -1712,9 +1745,14 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo 
   const [plano, setPlano] = useState(planoInicial || "anual");
   const [copiado, setCopiado] = useState(false);
 
-  const dados = plano === "anual"
-    ? { valor: "5.000 Kz", periodo: "por ano", nome: "Anual" }
-    : { valor: "500 Kz", periodo: "por mês", nome: "Mensal" };
+  // Preços: com desconto (dentro do teste) vs cheio (depois)
+  const PRECO = {
+    anual:  { normal: "10.000 Kz", desconto: "5.000 Kz", periodo: "por ano", nome: "Anual" },
+    mensal: { normal: "1.000 Kz",  desconto: "500 Kz",   periodo: "por mês", nome: "Mensal" },
+  };
+  const p = PRECO[plano];
+  const valorAtual = dentroDoTeste ? p.desconto : p.normal;
+  const dados = { valor: valorAtual, periodo: p.periodo, nome: p.nome };
 
   const copiarIban = () => {
     const limpo = IBAN.replace(/\./g, "");
@@ -1763,16 +1801,40 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo 
     return (
       <div style={S.setup}>
         <div style={S.setupCard}>
-          <div style={{ fontSize: "2.5em", marginBottom: 12 }}>🔓</div>
-          <div style={{ ...S.logo, marginBottom: 8 }}>Os teus 14 dias gratuitos acabaram</div>
-          <p style={{ color: "#A09880", fontSize: "0.92em", lineHeight: 1.6, marginBottom: 22 }}>
-            Já sabes o que é abrir o telemóvel e saber exactamente quanto podes gastar hoje. Continua a gastar sem culpa.
-          </p>
+          {onFechar && (
+            <button onClick={onFechar}
+              style={{ position: "absolute", top: 16, right: 16, background: "transparent", border: "none", color: "#8A8070", fontSize: "1.3em", cursor: "pointer", fontFamily: "inherit", lineHeight: 1 }}>
+              ✕
+            </button>
+          )}
+
+          {dentroDoTeste ? (
+            // Dentro dos 14 dias — oferta de desconto com anel de urgência
+            <>
+              <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 18 }}>
+                <AnelContagem diasRestantes={diasRestantes} />
+                <div>
+                  <div style={{ fontSize: "1.15em", fontWeight: 800, color: "#F59E0B", lineHeight: 1.2 }}>Paga agora e poupa 50%</div>
+                  <div style={{ fontSize: "0.82em", color: "#A09880", marginTop: 4, lineHeight: 1.4 }}>
+                    Só enquanto durar o teu período gratuito. 🌅
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: "2.5em", marginBottom: 12 }}>🔓</div>
+              <div style={{ ...S.logo, marginBottom: 8 }}>Os teus 14 dias gratuitos acabaram</div>
+              <p style={{ color: "#A09880", fontSize: "0.92em", lineHeight: 1.6, marginBottom: 22 }}>
+                Já sabes o que é abrir o telemóvel e saber exactamente quanto podes gastar hoje. Continua a gastar sem culpa.
+              </p>
+            </>
+          )}
 
           <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 22 }}>
             <button onClick={() => setPlano("anual")}
               style={{ position: "relative", textAlign: "left", background: plano === "anual" ? "#F59E0B12" : "#0A0A0A", border: `2px solid ${plano === "anual" ? "#F59E0B" : "#1E1E1E"}`, borderRadius: 16, padding: "16px 18px", cursor: "pointer", fontFamily: "inherit" }}>
-              <div style={{ position: "absolute", top: -10, right: 16, background: "#F59E0B", color: "#000", fontSize: "0.68em", fontWeight: 800, padding: "3px 10px", borderRadius: 20 }}>2 MESES GRÁTIS</div>
+              <div style={{ position: "absolute", top: -10, right: 16, background: dentroDoTeste ? "#22C55E" : "#F59E0B", color: "#000", fontSize: "0.68em", fontWeight: 800, padding: "3px 10px", borderRadius: 20 }}>{dentroDoTeste ? "POUPA 50%" : "MELHOR VALOR"}</div>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <div style={{ width: 22, height: 22, borderRadius: "50%", border: `2px solid ${plano === "anual" ? "#F59E0B" : "#444"}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                   {plano === "anual" && <div style={{ width: 11, height: 11, borderRadius: "50%", background: "#F59E0B" }} />}
@@ -1780,7 +1842,9 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo 
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: "0.95em", fontWeight: 800, color: "#E8E0D0" }}>Anual</div>
                   <div style={{ fontSize: "0.78em", color: "#8A8070", marginTop: 2 }}>
-                    <span style={{ textDecoration: "line-through" }}>6.000 Kz</span> &nbsp;5.000 Kz por ano
+                    {dentroDoTeste
+                      ? <><span style={{ textDecoration: "line-through" }}>10.000 Kz</span> &nbsp;<span style={{ color: "#22C55E", fontWeight: 700 }}>5.000 Kz</span> por ano</>
+                      : <>10.000 Kz por ano</>}
                   </div>
                 </div>
               </div>
@@ -1794,7 +1858,11 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo 
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: "0.95em", fontWeight: 800, color: "#E8E0D0" }}>Mensal</div>
-                  <div style={{ fontSize: "0.78em", color: "#8A8070", marginTop: 2 }}>500 Kz por mês</div>
+                  <div style={{ fontSize: "0.78em", color: "#8A8070", marginTop: 2 }}>
+                    {dentroDoTeste
+                      ? <><span style={{ textDecoration: "line-through" }}>1.000 Kz</span> &nbsp;<span style={{ color: "#22C55E", fontWeight: 700 }}>500 Kz</span> no 1º mês</>
+                      : <>1.000 Kz por mês</>}
+                  </div>
                 </div>
               </div>
             </button>
@@ -2532,6 +2600,67 @@ function InstalarAppModal({ deferredPrompt, onInstalado, onFechar }) {
   );
 }
 
+function AvaliacaoModal({ onEnviar, onFechar, avaliacaoAnterior }) {
+  const [estrelas, setEstrelas] = useState(avaliacaoAnterior?.estrelas || 0);
+  const [hover, setHover] = useState(0);
+  const [texto, setTexto] = useState(avaliacaoAnterior?.texto || "");
+
+  return (
+    <div style={S.modalOverlay}>
+      <div style={S.modalCard}>
+        {onFechar && (
+          <button onClick={onFechar}
+            style={{ position: "absolute", top: 16, right: 16, background: "transparent", border: "none", color: "#8A8070", fontSize: "1.3em", cursor: "pointer", fontFamily: "inherit", lineHeight: 1 }}>
+            ✕
+          </button>
+        )}
+        <div style={{ fontSize: "2.2em", textAlign: "center", marginBottom: 10 }}>🌅</div>
+        <div style={{ ...S.logo, fontSize: "1.1em", textAlign: "center", marginBottom: 8 }}>
+          Estás a gostar da Klaco?
+        </div>
+        <p style={{ fontSize: "0.86em", color: "#A09880", lineHeight: 1.5, textAlign: "center", marginBottom: 20 }}>
+          A tua opinião ajuda-nos a melhorar. Leva só um segundo. 🙏
+        </p>
+
+        {/* Estrelas */}
+        <div style={{ display: "flex", justifyContent: "center", gap: 8, marginBottom: 20 }}>
+          {[1,2,3,4,5].map(n => (
+            <button key={n}
+              onClick={() => setEstrelas(n)}
+              onMouseEnter={() => setHover(n)}
+              onMouseLeave={() => setHover(0)}
+              style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: "2.1em", lineHeight: 1, padding: 2, fontFamily: "inherit", transition: "transform 0.1s", transform: (hover || estrelas) >= n ? "scale(1.1)" : "scale(1)" }}>
+              <span style={{ filter: (hover || estrelas) >= n ? "none" : "grayscale(1) opacity(0.35)" }}>⭐</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Texto opcional */}
+        <textarea
+          value={texto}
+          onChange={e => setTexto(e.target.value)}
+          placeholder="Queres dizer mais alguma coisa? (opcional)"
+          rows={3}
+          style={{ width: "100%", background: "#0A0A0A", border: "1px solid #1E1E1E", borderRadius: 12, padding: "12px 14px", color: "#DDD", fontSize: "0.88em", fontFamily: "inherit", resize: "none", marginBottom: 18, lineHeight: 1.5 }}
+        />
+
+        <button
+          disabled={estrelas === 0}
+          onClick={() => onEnviar({ estrelas, texto: texto.trim(), data: todayStr() })}
+          style={{ ...S.btn, opacity: estrelas > 0 ? 1 : 0.4 }}>
+          Enviar avaliação
+        </button>
+        {onFechar && (
+          <button onClick={onFechar}
+            style={{ width: "100%", background: "transparent", border: "none", color: "#8A8070", fontSize: "0.83em", cursor: "pointer", fontFamily: "inherit", marginTop: 10 }}>
+            Agora não
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function NotifConsentModal({ onGuardar }) {
   const [lembrete, setLembrete] = useState(false);
   const [novidades, setNovidades] = useState(false);
@@ -2600,6 +2729,9 @@ const INIT = {
   notifNovidades: false,     // consentimento: novidades e promoções
   notifPerguntado: false,    // já mostrámos o cartão de consentimento?
   dicaRegistoMostrada: false, // já mostrámos a dica "regista para o número ficar certo"?
+  avaliacaoTrialFeita: false, // já pedimos avaliação uma vez durante o trial?
+  ultimaAvaliacao: null,      // { estrelas, texto, data } da última avaliação enviada
+  ultimoPedidoAvaliacao: null, // data do último pedido (para espaçar depois do trial)
   comprovativoEnviado: false, // pagamento: já abriu o WhatsApp para enviar o comprovativo?
   etiquetasCustom: {}, // descrições personalizadas por categoria: { necessidades: ["..."], ... }
   planoEscolhido: "anual",    // plano que escolheu no ecrã de pagamento
@@ -2803,6 +2935,33 @@ export default function App() {
   const [conviteMomento, setConviteMomento] = useState(false); // modal após 1ª despesa
   const [deferredPrompt, setDeferredPrompt] = useState(null);   // evento de instalar (Android)
   const [mostrarInstalar, setMostrarInstalar] = useState(false); // modal de instalar visível agora
+  const [mostrarPagarJa, setMostrarPagarJa] = useState(false);   // ecrã de pagamento antecipado (durante teste)
+  const [mostrarAvaliacao, setMostrarAvaliacao] = useState(false); // modal de avaliação (estrelas)
+  const [avaliacaoManual, setAvaliacaoManual] = useState(false);   // aberta pelas Definições (pode fechar sempre)
+
+  const handleEnviarAvaliacao = (avaliacao) => {
+    // [DEV] Enviar a avaliação para o Supabase (tabela "avaliacoes"):
+    //   { user_id, estrelas: avaliacao.estrelas, texto: avaliacao.texto, data: avaliacao.data }
+    //   É assim que as notas chegam a um painel onde a equipa as vê.
+    setState(prev => ({
+      ...prev,
+      ultimaAvaliacao: avaliacao,
+      avaliacaoTrialFeita: true,
+      ultimoPedidoAvaliacao: todayStr(),
+    }));
+    setMostrarAvaliacao(false);
+    setAvaliacaoManual(false);
+  };
+
+  const handleFecharAvaliacao = () => {
+    // Fechar sem avaliar: no trial conta como "já perguntámos" (só uma vez);
+    // se foi aberta manualmente, apenas fecha.
+    if (!avaliacaoManual) {
+      setState(prev => ({ ...prev, avaliacaoTrialFeita: true, ultimoPedidoAvaliacao: todayStr() }));
+    }
+    setMostrarAvaliacao(false);
+    setAvaliacaoManual(false);
+  };
 
   // Captura o evento de instalação (Android/Chrome) e deteta se já está instalada
   useEffect(() => {
@@ -2872,7 +3031,62 @@ export default function App() {
       conviteMomento, conquistaModal,
       state.rendimentoVariavel, state.periodoSalarioConfirmado, state.dataRecebimento]);
 
+  // Pedido de avaliação — PRIORIDADE MAIS BAIXA de todas.
+  // No trial: uma única vez, ao 7º dia. Depois do trial: espaçado (~30 dias).
+  // Só aparece se NENHUM outro aviso/ecrã estiver ativo nesta sessão.
+  useEffect(() => {
+    if (!state.setup) return;
+    // Não empilhar: cede a vez a todos os outros avisos e ecrãs.
+    const algoAtivo =
+      mostrarInstalar || mostrarPagarJa || conviteMomento || conquistaModal ||
+      !state.notifPerguntado ||
+      (state.rendimentoVariavel && state.periodoSalarioConfirmado !== state.dataRecebimento) ||
+      (!state.appInstalada && (state.instalarPedidos || 0) === 0);
+    if (algoAtivo) return;
+
+    if (!trialExpired) {
+      // Durante o trial: uma vez, ao 7º dia
+      if (!state.avaliacaoTrialFeita && trialDaysUsed >= 7) {
+        setAvaliacaoManual(false);
+        setMostrarAvaliacao(true);
+      }
+    } else {
+      // Depois do trial: espaçado ~30 dias desde o último pedido
+      const ultimo = state.ultimoPedidoAvaliacao;
+      const diasDesde = ultimo ? daysSince(ultimo) : 999;
+      if (diasDesde >= 30) {
+        setAvaliacaoManual(false);
+        setMostrarAvaliacao(true);
+      }
+    }
+  }, [state.setup, trialDaysUsed, trialExpired, state.avaliacaoTrialFeita,
+      state.notifPerguntado, state.appInstalada, state.instalarPedidos,
+      mostrarInstalar, mostrarPagarJa, conviteMomento, conquistaModal,
+      state.rendimentoVariavel, state.periodoSalarioConfirmado, state.dataRecebimento, state.ultimoPedidoAvaliacao]);
+
   // If trial expired, show expired screen
+  // Pagamento antecipado — durante o teste, com desconto de 50%
+  if (mostrarPagarJa && !trialExpired) {
+    return (
+      <div style={S.app}>
+        <style>{`
+          @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap');
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          input { -webkit-appearance: none; }
+          @keyframes slideUp { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
+        `}</style>
+        <TrialExpiredScreen
+          comprovativoEnviado={state.comprovativoEnviado}
+          planoInicial={state.planoEscolhido}
+          onComprovativo={handleComprovativoEnviado}
+          dentroDoTeste={true}
+          diasRestantes={trialDaysLeft}
+          onFechar={() => setMostrarPagarJa(false)}
+        />
+      </div>
+    );
+  }
+
   if (trialExpired && screen !== "setup") {
     return (
       <div style={S.app}>
@@ -2945,19 +3159,29 @@ export default function App() {
               </div>
             </div>
           )}
-          {/* Chip de contagem do teste — visível durante o trial */}
+          {/* Bloco de subscrição — no fim do Início, com anel de urgência durante o teste */}
           {state.setup && !trialExpired && (
-            <div style={{ padding: "0 16px 8px", marginTop: -8 }}>
-              <div style={{ fontSize: "0.72em", color: trialDaysLeft <= 2 ? "#EF4444" : "#8A8070", textAlign: "center" }}>
-                {trialDaysLeft <= 2
-                  ? `⏳ Os teus 14 dias gratuitos terminam em ${trialDaysLeft} dia${trialDaysLeft !== 1 ? "s" : ""}`
-                  : `🌅 Período gratuito — ${trialDaysLeft} de 14 dias grátis restantes`}
+            <div style={{ padding: "8px 16px 20px" }}>
+              <div style={{ background: "linear-gradient(160deg,#0F0C00,#0A0800)", border: `1px solid ${trialDaysLeft <= 3 ? "rgba(239,68,68,0.3)" : "rgba(245,158,11,0.2)"}`, borderRadius: 20, padding: "20px", display: "flex", alignItems: "center", gap: 16 }}>
+                <AnelContagem diasRestantes={trialDaysLeft} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: "1em", fontWeight: 800, color: "#F59E0B", lineHeight: 1.2, marginBottom: 4 }}>Paga já e poupa 50%</div>
+                  <div style={{ fontSize: "0.78em", color: "#A09880", lineHeight: 1.4, marginBottom: 10 }}>
+                    Só enquanto durar o teu período gratuito. 🌅
+                  </div>
+                  <button onClick={() => setMostrarPagarJa(true)}
+                    style={{ background: "#F59E0B", border: "none", borderRadius: 10, padding: "9px 16px", color: "#000", fontWeight: 800, fontSize: "0.82em", cursor: "pointer", fontFamily: "inherit" }}>
+                    Pagar já →
+                  </button>
+                </div>
               </div>
             </div>
           )}
+          {/* Espaço para a barra de navegação fixa não tapar o conteúdo do fim */}
+          <div style={{ height: "calc(90px + env(safe-area-inset-bottom, 0px))" }} />
         </>
       )}
-      {screen === "settings"   && <SettingsScreen state={state} onToggleNotif={handleToggleNotif} onBack={() => setScreen("dashboard")} onEditarDados={() => setScreen("editarDados")} onVerDespesas={() => setScreen("todasDespesas")} onVerEntradas={() => setScreen("todasEntradas")} onOpenConvite={() => setScreen("convite")} onVerEtiquetas={() => setScreen("etiquetas")} />}
+      {screen === "settings"   && <SettingsScreen state={state} onToggleNotif={handleToggleNotif} onBack={() => setScreen("dashboard")} onEditarDados={() => setScreen("editarDados")} onVerDespesas={() => setScreen("todasDespesas")} onVerEntradas={() => setScreen("todasEntradas")} onOpenConvite={() => setScreen("convite")} onVerEtiquetas={() => setScreen("etiquetas")} onOpenPlano={() => setMostrarPagarJa(true)} planoSub={trialExpired ? "O teu período gratuito terminou — subscreve" : `Período gratuito — ${trialDaysLeft} dias restantes`} onOpenAvaliacao={() => { setAvaliacaoManual(true); setMostrarAvaliacao(true); }} />}
       {screen === "etiquetas"  && <EtiquetasScreen etiquetasCustom={state.etiquetasCustom || {}} onDelete={handleDeleteEtiqueta} onBack={() => setScreen("settings")} />}
       {screen === "editarDados" && <EditarDadosScreen state={state} onSave={handleSettingsSave} onBack={() => setScreen("settings")} />}
       {screen === "convite"     && <ConviteScreen inviteCode={state.inviteCode} inviteCount={state.inviteCount} diasAtivos={diasAtivos} onBack={() => setScreen("dashboard")} />}
@@ -2995,6 +3219,15 @@ export default function App() {
           deferredPrompt={deferredPrompt}
           onInstalado={handleInstalado}
           onFechar={handleFecharInstalar}
+        />
+      )}
+
+      {/* Avaliação por estrelas — prioridade mais baixa; sempre dispensável */}
+      {mostrarAvaliacao && (
+        <AvaliacaoModal
+          onEnviar={handleEnviarAvaliacao}
+          onFechar={handleFecharAvaliacao}
+          avaliacaoAnterior={state.ultimaAvaliacao}
         />
       )}
 
