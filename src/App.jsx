@@ -1729,21 +1729,16 @@ function AnelContagem({ diasRestantes, total = 14 }) {
 }
 
 function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo, dentroDoTeste = false, diasRestantes = 0, onFechar }) {
-  // ── MODO TEMPORÁRIO (transferência por IBAN + comprovativo por WhatsApp) ──
-  // [DEV] Quando o gateway estiver activo, voltar ao pagamento automático por referência.
+  // ── PAGAMENTO VIA GATEWAY (AppyPay / BAI) ──
+  // [DEV] Ao tocar num método, iniciar o pagamento no gateway enviando:
+  //         merchant_reference = user_id  (liga o pagamento à conta)
+  //         metadata = { plano, dentro_trial }
+  //       A confirmação chega pelo webhook (ver doc do backend) e ativa o acesso.
   // [DEV] REGRA DE PREÇO (aplicada na cobrança/renovação pelo backend):
-  //   - Pagar DENTRO dos 14 dias grátis: 1º pagamento com 50% desconto
-  //       · mensal: 500 Kz no 1º mês, depois 1.000 Kz/mês
-  //       · anual:  5.000 Kz no 1º ano, depois 10.000 Kz/ano
-  //   - Pagar DEPOIS dos 14 dias: preço cheio (1.000 mensal / 10.000 anual)
-  const WHATSAPP = "244927677540";
-  const BANCO = "BFA";
-  const IBAN = "AO06.0006.0000.6680.4757.3011.9";
-  const BENEFICIARIO = "SALO. TTF";
-
-  const [etapa, setEtapa] = useState("escolha"); // escolha | pagamento
+  //   - DENTRO dos 14 dias: 1º pagamento com 50% (mensal 500 / anual 5.000); renova a cheio.
+  //   - DEPOIS dos 14 dias: preço cheio (mensal 1.000 / anual 10.000).
+  const [etapa, setEtapa] = useState("escolha"); // escolha | metodo
   const [plano, setPlano] = useState(planoInicial || "anual");
-  const [copiado, setCopiado] = useState(false);
 
   // Preços: com desconto (dentro do teste) vs cheio (depois)
   const PRECO = {
@@ -1754,42 +1749,29 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo,
   const valorAtual = dentroDoTeste ? p.desconto : p.normal;
   const dados = { valor: valorAtual, periodo: p.periodo, nome: p.nome };
 
-  const copiarIban = () => {
-    const limpo = IBAN.replace(/\./g, "");
-    try { navigator.clipboard.writeText(limpo); } catch (e) {}
-    setCopiado(true);
-  };
+  // Métodos de pagamento (visual para demo; ligam ao gateway quando a AppyPay estiver ativa)
+  const METODOS = [
+    { id: "mcx",     nome: "Multicaixa Express", sub: "Confirmas o pagamento na app MCX Express", emoji: "📲" },
+    { id: "ref",     nome: "Referência",         sub: "Pagas em qualquer ATM ou homebanking",     emoji: "🔢" },
+    { id: "debito",  nome: "Débito direto",      sub: "Debitado diretamente da tua conta",        emoji: "🏦" },
+  ];
 
-  const abrirWhatsApp = () => {
-    const msg = encodeURIComponent("Olá! Segue o comprovativo de pagamento 🙂");
-    window.open(`https://wa.me/${WHATSAPP}?text=${msg}`, "_blank");
-  };
-
-  const enviarComprovativo = () => {
-    abrirWhatsApp();
-    onComprovativo(plano); // marca na memória que já avançou para o envio
-  };
-
-  // ── ECRÃ DE ESPERA — depois de enviar o comprovativo (com saída) ──
+  // ── ECRÃ DEMO — após escolher um método (representa o hand-off ao gateway) ──
   if (comprovativoEnviado) {
     return (
       <div style={S.setup}>
         <div style={S.setupCard}>
           <div style={{ fontSize: "3em", marginBottom: 16, textAlign: "center" }}>🌅</div>
-          <div style={{ ...S.logo, marginBottom: 12, textAlign: "center" }}>Estamos a confirmar</div>
+          <div style={{ ...S.logo, marginBottom: 12, textAlign: "center" }}>A processar o pagamento</div>
           <p style={{ color: "#C8C0B0", fontSize: "0.95em", lineHeight: 1.7, textAlign: "center", marginBottom: 20 }}>
-            Recebemos o teu pedido. Assim que confirmarmos o teu comprovativo, ativamos o teu acesso — e avisamos-te pelo WhatsApp. 🙂
+            Estás a ser encaminhado para pagamento seguro. Assim que o pagamento for confirmado, o teu acesso é ativado automaticamente. 🙂
           </p>
-          <div style={{ background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: 14, padding: "16px 18px", fontSize: "0.86em", color: "#A09880", lineHeight: 1.6, marginBottom: 20, textAlign: "center" }}>
-            Ainda não enviaste o comprovativo no WhatsApp? Abre a conversa e anexa-o, para ativarmos o teu acesso.
+          <div style={{ background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: 14, padding: "14px 16px", fontSize: "0.8em", color: "#8A8070", lineHeight: 1.6, marginBottom: 20, textAlign: "center" }}>
+            Integração de pagamento (Multicaixa Express · Referência · Débito direto) — via gateway AppyPay / BAI.
           </div>
-          <button onClick={abrirWhatsApp}
-            style={{ width: "100%", background: "#25D366", border: "none", borderRadius: 14, padding: "16px", color: "#000", fontWeight: 800, fontSize: "0.98em", cursor: "pointer", fontFamily: "inherit", marginBottom: 12 }}>
-            Abrir o WhatsApp
-          </button>
           <button onClick={() => { onComprovativo(null); setEtapa("escolha"); }}
             style={{ width: "100%", background: "transparent", border: "none", color: "#8A8070", fontSize: "0.85em", cursor: "pointer", fontFamily: "inherit" }}>
-            Ainda não paguei / mudar de plano
+            Voltar
           </button>
         </div>
       </div>
@@ -1868,7 +1850,7 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo,
             </button>
           </div>
 
-          <button onClick={() => { setCopiado(false); setEtapa("pagamento"); }} style={S.btn}>
+          <button onClick={() => setEtapa("metodo")} style={S.btn}>
             Continuar
           </button>
         </div>
@@ -1876,7 +1858,7 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo,
     );
   }
 
-  // ── PÁGINA 2 — PAGAMENTO ──
+  // ── PÁGINA 2 — ESCOLHA DO MÉTODO DE PAGAMENTO (ponto de integração BAI/AppyPay) ──
   return (
     <div style={S.setup}>
       <div style={S.setupCard}>
@@ -1886,60 +1868,34 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo,
         </button>
 
         <div style={{ ...S.logo, marginBottom: 4, fontSize: "1.1em" }}>Plano {dados.nome}</div>
-        <p style={{ color: "#A09880", fontSize: "0.88em", marginBottom: 20 }}>
-          Faz a transferência e envia-nos o comprovativo. 🌅
-        </p>
-
-        {/* Dados de transferência */}
-        <div style={{ background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: 16, padding: "20px", marginBottom: 18 }}>
-          <div style={{ fontSize: "0.78em", fontWeight: 700, letterSpacing: "0.08em", color: "#8A8070", marginBottom: 14 }}>
-            FAZ A TRANSFERÊNCIA PARA
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <span style={{ color: "#8A8070", fontSize: "0.88em" }}>Banco</span>
-            <span style={{ color: "#E8E0D0", fontSize: "1em", fontWeight: 700 }}>{BANCO}</span>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <span style={{ color: "#8A8070", fontSize: "0.88em" }}>Beneficiário</span>
-            <span style={{ color: "#E8E0D0", fontSize: "1em", fontWeight: 700 }}>{BENEFICIARIO}</span>
-          </div>
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ color: "#8A8070", fontSize: "0.88em", marginBottom: 6 }}>IBAN</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ color: "#E8E0D0", fontSize: "0.92em", fontWeight: 700, fontFamily: "monospace", flex: 1, wordBreak: "break-all" }}>{IBAN}</span>
-              <button onClick={copiarIban}
-                style={{ background: copiado ? "#22C55E" : "#F59E0B", border: "none", borderRadius: 8, padding: "6px 12px", color: "#000", fontWeight: 800, fontSize: "0.78em", cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>
-                {copiado ? "Copiado ✓" : "Copiar"}
-              </button>
-            </div>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 12, borderTop: "1px solid #1A1A1A" }}>
-            <span style={{ color: "#8A8070", fontSize: "0.88em" }}>Valor a transferir</span>
-            <span style={{ color: "#F59E0B", fontSize: "1.2em", fontWeight: 800 }}>{dados.valor} <span style={{ fontSize: "0.6em", color: "#8A8070", fontWeight: 600 }}>{dados.periodo}</span></span>
-          </div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18, paddingBottom: 14, borderBottom: "1px solid #1A1A1A" }}>
+          <span style={{ color: "#A09880", fontSize: "0.88em" }}>Valor a pagar</span>
+          <span style={{ color: "#F59E0B", fontSize: "1.2em", fontWeight: 800 }}>{dados.valor} <span style={{ fontSize: "0.6em", color: "#8A8070", fontWeight: 600 }}>{dados.periodo}</span></span>
         </div>
 
-        {/* 3 passos */}
+        <div style={{ fontSize: "0.78em", fontWeight: 700, letterSpacing: "0.08em", color: "#8A8070", marginBottom: 14 }}>
+          COMO QUERES PAGAR?
+        </div>
+
+        {/* Métodos de pagamento — ligam ao gateway (AppyPay/BAI) quando ativo */}
         <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 18 }}>
-          {[
-            "Copia o IBAN e paga pela app do teu banco.",
-            "Faz um print ou descarrega o comprovativo.",
-            "Volta aqui e carrega no botão para enviar.",
-          ].map((txt, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <div style={{ width: 26, height: 26, borderRadius: "50%", background: "#F59E0B", color: "#000", fontWeight: 800, fontSize: "0.85em", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{i + 1}</div>
-              <span style={{ fontSize: "0.88em", color: "#C8C0B0", lineHeight: 1.4 }}>{txt}</span>
-            </div>
+          {METODOS.map(m => (
+            <button key={m.id}
+              onClick={() => onComprovativo(plano)}  // [DEV] iniciar pagamento no gateway com este método
+              style={{ display: "flex", alignItems: "center", gap: 14, background: "#0D0D0D", border: "1px solid #1E1E1E", borderRadius: 14, padding: "16px", cursor: "pointer", fontFamily: "inherit", textAlign: "left", transition: "border-color 0.15s" }}>
+              <span style={{ fontSize: "1.6em", flexShrink: 0 }}>{m.emoji}</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: "0.98em", fontWeight: 700, color: "#E8E0D0" }}>{m.nome}</div>
+                <div style={{ fontSize: "0.8em", color: "#8A8070", marginTop: 2 }}>{m.sub}</div>
+              </div>
+              <span style={{ color: "#8A8070", fontSize: "1.2em", flexShrink: 0 }}>›</span>
+            </button>
           ))}
         </div>
 
-        {/* Botão de enviar — só aparece depois de copiar o IBAN */}
-        {copiado && (
-          <button onClick={enviarComprovativo}
-            style={{ width: "100%", background: "#25D366", border: "none", borderRadius: 14, padding: "16px", color: "#000", fontWeight: 800, fontSize: "0.98em", cursor: "pointer", fontFamily: "inherit", animation: "slideUp 0.3s ease" }}>
-            Enviar comprovativo pelo WhatsApp
-          </button>
-        )}
+        <div style={{ fontSize: "0.75em", color: "#6A6050", textAlign: "center", lineHeight: 1.5 }}>
+          🔒 Pagamento seguro via Multicaixa (EMIS). O acesso é ativado automaticamente após a confirmação.
+        </div>
       </div>
     </div>
   );
@@ -2793,7 +2749,12 @@ export default function App() {
   // Trial day calculation (uses daysSince helper)
   const trialDaysUsed = state.setupDate ? daysSince(state.setupDate) : 0;
   const trialDaysLeft = Math.max(0, TRIAL_DAYS - trialDaysUsed);
-  const trialExpired = state.setup && trialDaysUsed >= TRIAL_DAYS;
+  // Contas com acesso sempre livre (dona/equipa) — nunca expiram no trial.
+  // [DEV] Quando o Supabase estiver ligado, mover isto para a base de dados
+  //       (marcar a conta como estado='ativo' permanente), em vez de estar no código.
+  const CONTAS_LIVRES = ["jezreelalfredo@hotmail.com"];
+  const contaLivre = state.email && CONTAS_LIVRES.includes(String(state.email).trim().toLowerCase());
+  const trialExpired = state.setup && trialDaysUsed >= TRIAL_DAYS && !contaLivre;
 
   const handleDispensarDica = () => {
     setState(prev => ({ ...prev, dicaRegistoMostrada: true }));
