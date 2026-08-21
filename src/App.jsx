@@ -1,6 +1,63 @@
 import { useState, useRef, useEffect } from "react";
+import { supabase, normalizarTelefone } from "./lib/supabase";
 
-// ── helpers ───────────────────────────────────────────────────────────────────
+// ── Supabase: funções de dados ────────────────────────────────────────────────
+// Camada fina sobre o Supabase. A lógica da app não muda; estas funções só ligam
+// o estado existente à base de dados. RLS garante que cada utilizador só toca no
+// que é seu. NUNCA usar service_role aqui (só a chave anon, via cliente importado).
+
+// Cria/atualiza o perfil após signup (id = auth.users.id). Não apaga dados existentes.
+async function upsertPerfil(user, extra = {}) {
+  if (!user?.id) return;
+  const payload = {
+    id: user.id,
+    email: user.email || extra.email || null,
+    telefone: extra.telefone || user.phone || null,
+    ...(extra.nome ? { nome: extra.nome } : {}),
+  };
+  // onConflict id: se já existe, atualiza só o que passamos (não sobrescreve o resto)
+  const { error } = await supabase.from("perfis").upsert(payload, { onConflict: "id" });
+  if (error) console.error("upsertPerfil:", error.message);
+}
+
+// Carrega o perfil do utilizador autenticado
+async function carregarPerfil(userId) {
+  const { data, error } = await supabase.from("perfis").select("*").eq("id", userId).single();
+  if (error) { console.error("carregarPerfil:", error.message); return null; }
+  return data;
+}
+
+// Persiste o estado da app em perfis.dados (chamado com debounce)
+async function guardarDados(userId, dados) {
+  const { error } = await supabase
+    .from("perfis")
+    .update({ dados, atualizado_em: new Date().toISOString() })
+    .eq("id", userId);
+  if (error) console.error("guardarDados:", error.message);
+}
+
+// Regista uma avaliação
+async function enviarAvaliacaoSupabase(userId, estrelas, texto) {
+  const { error } = await supabase.from("avaliacoes").insert({ user_id: userId, estrelas, texto: texto || null });
+  if (error) console.error("avaliacao:", error.message);
+}
+
+// Regista o relacionamento de convite (convidador via ?ref=, convidado = novo user)
+// Não toca em convidado_pagou (isso é da RPC ativar_pagamento, no servidor).
+async function registarConvite(codigoRef, convidadoId) {
+  if (!codigoRef || !convidadoId) return;
+  // Descobrir o convidador pelo inviteCode guardado no seu perfil.dados
+  const { data: perfis } = await supabase.from("perfis").select("id, dados");
+  const convidador = (perfis || []).find(p => p?.dados?.inviteCode === codigoRef);
+  if (!convidador || convidador.id === convidadoId) return;
+  const { error } = await supabase.from("convites").insert({
+    convidador_id: convidador.id,
+    convidado_id: convidadoId,
+  });
+  if (error) console.error("convite:", error.message);
+}
+
+
 // Format: 20.000,00 Kz (Angolan standard — dots for thousands, comma for decimals)
 const fmtKz = (n) => {
   const sign = n < 0 ? "-" : "";
@@ -122,40 +179,94 @@ function AuthScreen({ onAuth }) {
   const [showPass, setShowPass] = useState(false);
   const [erro, setErro] = useState("");
   const [recuperado, setRecuperado] = useState(false);
+  const [aLigar, setALigar] = useState(false);
+  // Fluxo OTP (telefone)
+  const [otpEnviado, setOtpEnviado] = useState(false);
+  const [otpCodigo, setOtpCodigo] = useState("");
+  const [telParaOtp, setTelParaOtp] = useState("");
 
   // Identificador: aceita EMAIL ou TELEFONE (em Angola muitos não têm email).
   const val = email.trim();
   const emailValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
-  // Telefone angolano: 9 dígitos (ex: 9XXXXXXXX), com ou sem +244 / espaços
   const telLimpo = val.replace(/[\s\-()]/g, "").replace(/^\+?244/, "");
   const telValido = /^9\d{8}$/.test(telLimpo);
   const idValido = emailValido || telValido;
   const passValida = password.length >= 6;
 
-  // [DEV] Ligar ao Supabase Auth: criar utilizador, validar login, recuperar acesso.
-  //       Suportar DUAS vias de autenticação:
-  //       - EMAIL:    supabase.auth.signUp / signInWithPassword / resetPasswordForEmail
-  //       - TELEFONE: supabase.auth.signInWithOtp({ phone }) — envia código por SMS.
-  //       Detetar qual foi usado (emailValido vs telValido) e chamar o método certo.
-  //       NOTA: o SMS tem custo por envio — confirmar fornecedor de SMS no Supabase.
-  const submeterCriar = () => {
+  const traduzErro = (m) => {
+    if (!m) return "Algo correu mal. Tenta de novo.";
+    if (/invalid login|credentials/i.test(m)) return "Email ou palavra-passe incorretos.";
+    if (/already registered|already exists/i.test(m)) return "Já existe uma conta com estes dados. Tenta entrar.";
+    if (/email not confirmed/i.test(m)) return "Confirma o teu email antes de entrar.";
+    if (/token|otp|expired/i.test(m)) return "Código inválido ou expirado. Pede um novo.";
+    return "Não foi possível concluir. Verifica os dados e tenta de novo.";
+  };
+
+  // ── Criar conta ──
+  const submeterCriar = async () => {
     setErro("");
     if (!idValido) { setErro("Escreve um email ou número de telefone válido."); return; }
     if (!passValida) { setErro("A password precisa de pelo menos 6 caracteres."); return; }
-    // [DEV] Se emailValido -> signUp({email,password}); se telValido -> signInWithOtp({phone})
-    onAuth(val);
+    setALigar(true);
+    try {
+      if (emailValido) {
+        const { data, error } = await supabase.auth.signUp({ email: val, password });
+        if (error) { setErro(traduzErro(error.message)); return; }
+        if (data.user) { await upsertPerfil(data.user, { email: val }); onAuth(val, data.user); }
+      } else {
+        // Telefone: signup por OTP (o código chega por SMS)
+        const phone = normalizarTelefone(val);
+        const { error } = await supabase.auth.signInWithOtp({ phone });
+        if (error) { setErro(traduzErro(error.message)); return; }
+        setTelParaOtp(phone); setOtpEnviado(true);
+      }
+    } finally { setALigar(false); }
   };
-  const submeterEntrar = () => {
+
+  // ── Entrar ──
+  const submeterEntrar = async () => {
     setErro("");
-    if (!idValido || !passValida) { setErro("Verifica os teus dados e a password."); return; }
-    // [DEV] Email -> signInWithPassword; Telefone -> verificar código SMS (OTP)
-    onAuth(val);
+    if (!idValido) { setErro("Verifica os teus dados."); return; }
+    setALigar(true);
+    try {
+      if (emailValido) {
+        if (!passValida) { setErro("Verifica a password."); return; }
+        const { data, error } = await supabase.auth.signInWithPassword({ email: val, password });
+        if (error) { setErro(traduzErro(error.message)); return; }
+        if (data.user) onAuth(val, data.user);
+      } else {
+        const phone = normalizarTelefone(val);
+        const { error } = await supabase.auth.signInWithOtp({ phone });
+        if (error) { setErro(traduzErro(error.message)); return; }
+        setTelParaOtp(phone); setOtpEnviado(true);
+      }
+    } finally { setALigar(false); }
   };
-  const submeterRecuperar = () => {
+
+  // ── Verificar código OTP (telefone) ──
+  const verificarOtp = async () => {
     setErro("");
-    if (!idValido) { setErro("Escreve o email ou telefone da tua conta."); return; }
-    // [DEV] Email -> resetPasswordForEmail; Telefone -> enviar código de recuperação por SMS
-    setRecuperado(true);
+    if (otpCodigo.length < 4) { setErro("Escreve o código que recebeste por SMS."); return; }
+    setALigar(true);
+    try {
+      const { data, error } = await supabase.auth.verifyOtp({ phone: telParaOtp, token: otpCodigo, type: "sms" });
+      if (error) { setErro(traduzErro(error.message)); return; }
+      if (data.user) { await upsertPerfil(data.user, { telefone: telParaOtp }); onAuth(telParaOtp, data.user); }
+    } finally { setALigar(false); }
+  };
+
+  // ── Recuperar password (email) ──
+  const submeterRecuperar = async () => {
+    setErro("");
+    if (!emailValido) { setErro("Escreve o email da tua conta."); return; }
+    setALigar(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(val, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (error) { setErro(traduzErro(error.message)); return; }
+      setRecuperado(true);
+    } finally { setALigar(false); }
   };
 
   const campoEmail = (
@@ -192,7 +303,7 @@ function AuthScreen({ onAuth }) {
       <div style={S.setupCard}>
         <div style={S.logo}>☀️ Klaco</div>
 
-        {modo === "inicio" && (
+        {modo === "inicio" && !otpEnviado && (
           <>
             <h2 style={S.setupTitle}>Agora sabes o que fazer com o teu dinheiro</h2>
             <p style={{ ...S.setupSub, marginBottom: 28 }}>Cria a tua conta e descobre, todos os dias, quanto podes gastar.</p>
@@ -204,16 +315,40 @@ function AuthScreen({ onAuth }) {
           </>
         )}
 
-        {modo === "criar" && (
+        {otpEnviado && (
+          <>
+            <h2 style={S.setupTitle}>Confirma o código</h2>
+            <p style={{ ...S.setupSub, marginBottom: 20 }}>
+              Enviámos um código por SMS para {telParaOtp}. Escreve-o aqui.
+            </p>
+            <div style={S.field}>
+              <label style={S.label}>CÓDIGO SMS</label>
+              <input type="text" inputMode="numeric" value={otpCodigo}
+                onChange={e => setOtpCodigo(e.target.value.replace(/\D/g, ""))}
+                placeholder="000000" style={S.input} maxLength={8} />
+            </div>
+            {msgErro}
+            <button onClick={verificarOtp} disabled={aLigar}
+              style={{ ...S.btn, opacity: (otpCodigo.length >= 4 && !aLigar) ? 1 : 0.5, marginBottom: 12 }}>
+              {aLigar ? "A confirmar…" : "Confirmar"}
+            </button>
+            <button onClick={() => { setOtpEnviado(false); setOtpCodigo(""); setErro(""); }}
+              style={{ width: "100%", background: "transparent", border: "none", color: "#8A8070", fontSize: "0.85em", cursor: "pointer", fontFamily: "inherit" }}>
+              ← Voltar
+            </button>
+          </>
+        )}
+
+        {modo === "criar" && !otpEnviado && (
           <>
             <h2 style={S.setupTitle}>Cria a tua conta</h2>
             <p style={{ ...S.setupSub, marginBottom: 20 }}>É rápido. Só precisas de um email ou telefone e uma palavra-passe.</p>
             {campoEmail}
             {campoPass(true)}
             {msgErro}
-            <button onClick={submeterCriar}
-              style={{ ...S.btn, opacity: (idValido && passValida) ? 1 : 0.5, marginBottom: 12 }}>
-              Criar conta
+            <button onClick={submeterCriar} disabled={aLigar}
+              style={{ ...S.btn, opacity: (idValido && passValida && !aLigar) ? 1 : 0.5, marginBottom: 12 }}>
+              {aLigar ? "A criar…" : "Criar conta"}
             </button>
             <p style={{ fontSize: "0.76em", color: "#8A8070", lineHeight: 1.5, textAlign: "center", marginBottom: 14 }}>
               Ao criar conta confirmas que tens 18 anos ou mais e aceitas a{" "}
@@ -227,16 +362,16 @@ function AuthScreen({ onAuth }) {
           </>
         )}
 
-        {modo === "entrar" && (
+        {modo === "entrar" && !otpEnviado && (
           <>
             <h2 style={S.setupTitle}>Bem-vindo de volta</h2>
             <p style={{ ...S.setupSub, marginBottom: 20 }}>Entra na tua conta para continuar.</p>
             {campoEmail}
             {campoPass(false)}
             {msgErro}
-            <button onClick={submeterEntrar}
-              style={{ ...S.btn, opacity: (idValido && passValida) ? 1 : 0.5, marginBottom: 10 }}>
-              Entrar
+            <button onClick={submeterEntrar} disabled={aLigar}
+              style={{ ...S.btn, opacity: (idValido && !aLigar) ? 1 : 0.5, marginBottom: 10 }}>
+              {aLigar ? "A entrar…" : "Entrar"}
             </button>
             <button onClick={() => { setModo("recuperar"); setErro(""); setRecuperado(false); }}
               style={{ width: "100%", background: "transparent", border: "none", color: "#F59E0B", fontSize: "0.85em", cursor: "pointer", fontFamily: "inherit", marginBottom: 14, fontWeight: 600 }}>
@@ -249,7 +384,7 @@ function AuthScreen({ onAuth }) {
           </>
         )}
 
-        {modo === "recuperar" && (
+        {modo === "recuperar" && !otpEnviado && (
           <>
             <h2 style={S.setupTitle}>Recuperar palavra-passe</h2>
             {recuperado ? (
@@ -2700,8 +2835,7 @@ const INIT = {
 
 export default function App() {
   // Lê o estado guardado no aparelho (memória entre sessões no mesmo dispositivo).
-  // [DEV] Para memória entre APARELHOS (login em qualquer telemóvel), ligar ao Supabase:
-  //       ao entrar, carregar o estado do utilizador da base de dados em vez do localStorage.
+  // localStorage serve de CACHE offline; a fonte de verdade é o Supabase (perfis.dados).
   const carregarEstado = () => {
     try {
       const guardado = window.localStorage.getItem("klaco_state");
@@ -2712,14 +2846,52 @@ export default function App() {
 
   const [state, setState] = useState(carregarEstado);
   const [screen, setScreen] = useState("auth");
+  const [userId, setUserId] = useState(null);       // id do utilizador autenticado (Supabase)
+  const [aCarregar, setACarregar] = useState(true); // a verificar sessão ao arrancar
+  const saveTimer = useRef(null);
+  const primeiraGravacao = useRef(true);
 
-  // Sempre que o estado muda, guarda no aparelho.
-  // [DEV] Substituir/complementar por gravação no Supabase para sincronizar entre aparelhos.
+  // Cache local imediato (offline) sempre que o estado muda.
   useEffect(() => {
-    try {
-      window.localStorage.setItem("klaco_state", JSON.stringify(state));
-    } catch (e) {}
+    try { window.localStorage.setItem("klaco_state", JSON.stringify(state)); } catch (e) {}
   }, [state]);
+
+  // Ao arrancar: verificar se há sessão ativa e carregar o perfil do Supabase.
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user && vivo) {
+          setUserId(session.user.id);
+          const perfil = await carregarPerfil(session.user.id);
+          if (perfil && vivo) {
+            const dados = perfil.dados && Object.keys(perfil.dados).length ? perfil.dados : {};
+            setState(prev => ({ ...INIT, ...prev, ...dados, email: perfil.email || prev.email }));
+            setScreen(dados.setup ? "dashboard" : "setup");
+          } else if (vivo) {
+            setScreen("setup");
+          }
+        }
+      } catch (e) { console.error("sessão:", e); }
+      finally { if (vivo) setACarregar(false); }
+    })();
+
+    // Reagir a login/logout noutros separadores/sessões
+    const { data: sub } = supabase.auth.onAuthStateChange((_evt, session) => {
+      setUserId(session?.user?.id ?? null);
+    });
+    return () => { vivo = false; sub?.subscription?.unsubscribe?.(); };
+  }, []);
+
+  // Guardar o estado no Supabase, com debounce (evita gravar a cada tecla).
+  useEffect(() => {
+    if (!userId) return;
+    if (primeiraGravacao.current) { primeiraGravacao.current = false; return; }
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => { guardarDados(userId, state); }, 1200);
+    return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
+  }, [state, userId]);
 
   // Acumulação automática dos objectivos: uma vez por período, soma a poupança mensal.
   // O identificador do período é a data de recebimento em vigor. Cada objectivo guarda
@@ -2777,9 +2949,33 @@ export default function App() {
     setState(prev => ({ ...prev, notifLembrete: lembrete, notifNovidades: novidades, notifPerguntado: true }));
   };
 
-  const handleAuth = (email) => {
+  const handleAuth = async (email, user) => {
+    if (user?.id) {
+      setUserId(user.id);
+      // Se veio por convite (?ref=CODIGO no link), registar o relacionamento
+      try {
+        const ref = new URLSearchParams(window.location.search).get("ref");
+        if (ref) await registarConvite(ref, user.id);
+      } catch (e) {}
+      // Carregar perfil (caso já exista de um login anterior)
+      const perfil = await carregarPerfil(user.id);
+      const dados = perfil?.dados && Object.keys(perfil.dados).length ? perfil.dados : null;
+      if (dados) {
+        setState(prev => ({ ...INIT, ...prev, ...dados, conta: true, email }));
+        setScreen(dados.setup ? "dashboard" : "setup");
+        return;
+      }
+    }
     setState(prev => ({ ...prev, conta: true, email }));
     setScreen("setup");
+  };
+
+  const handleLogout = async () => {
+    try { await supabase.auth.signOut(); } catch (e) {}
+    setUserId(null);
+    try { window.localStorage.removeItem("klaco_state"); } catch (e) {}
+    setState(INIT);
+    setScreen("auth");
   };
 
   const handleSetupDone = (data) => {
@@ -2901,9 +3097,8 @@ export default function App() {
   const [avaliacaoManual, setAvaliacaoManual] = useState(false);   // aberta pelas Definições (pode fechar sempre)
 
   const handleEnviarAvaliacao = (avaliacao) => {
-    // [DEV] Enviar a avaliação para o Supabase (tabela "avaliacoes"):
-    //   { user_id, estrelas: avaliacao.estrelas, texto: avaliacao.texto, data: avaliacao.data }
-    //   É assim que as notas chegam a um painel onde a equipa as vê.
+    // Envia a avaliação para o Supabase (tabela "avaliacoes"): estrelas + texto.
+    if (userId) enviarAvaliacaoSupabase(userId, avaliacao.estrelas, avaliacao.texto);
     setState(prev => ({
       ...prev,
       ultimaAvaliacao: avaliacao,
@@ -3024,6 +3219,18 @@ export default function App() {
       state.notifPerguntado, state.appInstalada, state.instalarPedidos,
       mostrarInstalar, mostrarPagarJa, conviteMomento, conquistaModal,
       state.rendimentoVariavel, state.periodoSalarioConfirmado, state.dataRecebimento, state.ultimoPedidoAvaliacao]);
+
+  // Ecrã de carregamento enquanto verifica a sessão no Supabase
+  if (aCarregar) {
+    return (
+      <div style={{ ...S.app, display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh" }}>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: "2.5em", marginBottom: 12 }}>🌅</div>
+          <div style={{ color: "#8A8070", fontSize: "0.9em" }}>A carregar…</div>
+        </div>
+      </div>
+    );
+  }
 
   // If trial expired, show expired screen
   // Pagamento antecipado — durante o teste, com desconto de 50%
