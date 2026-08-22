@@ -42,19 +42,23 @@ async function enviarAvaliacaoSupabase(userId, estrelas, texto) {
   if (error) console.error("avaliacao:", error.message);
 }
 
-// Regista o relacionamento de convite (convidador via ?ref=, convidado = novo user)
-// Não toca em convidado_pagou (isso é da RPC ativar_pagamento, no servidor).
-async function registarConvite(codigoRef, convidadoId) {
-  if (!codigoRef || !convidadoId) return;
-  // Descobrir o convidador pelo inviteCode guardado no seu perfil.dados
-  const { data: perfis } = await supabase.from("perfis").select("id, dados");
-  const convidador = (perfis || []).find(p => p?.dados?.inviteCode === codigoRef);
-  if (!convidador || convidador.id === convidadoId) return;
-  const { error } = await supabase.from("convites").insert({
-    convidador_id: convidador.id,
-    convidado_id: convidadoId,
-  });
-  if (error) console.error("convite:", error.message);
+// Convites: a tabela "convites" NÃO tem policy de INSERT para o utilizador comum
+// (só SELECT). Fazer insert direto pelo frontend seria bloqueado pelo RLS.
+// Por isso NÃO inserimos aqui. Guardamos o código de convite no perfil do convidado
+// (perfis.dados.refConvite), de forma segura, e deixamos o relacionamento em convites
+// para ser criado por uma Edge Function / RPC segura numa fase posterior.
+// [PENDENTE-BACKEND] Criar Edge Function (ou RPC SECURITY DEFINER) que:
+//   - recebe { convidadoId, codigoRef }
+//   - resolve o convidador pelo inviteCode
+//   - faz o insert em convites com service_role (no servidor, nunca no frontend)
+// convidado_pagou NUNCA é tocado pelo frontend.
+async function guardarRefConvite(userId, codigoRef) {
+  if (!userId || !codigoRef) return;
+  // Lê os dados atuais e adiciona o refConvite sem apagar o resto
+  const { data } = await supabase.from("perfis").select("dados").eq("id", userId).single();
+  const dados = { ...(data?.dados || {}), refConvite: codigoRef };
+  const { error } = await supabase.from("perfis").update({ dados }).eq("id", userId);
+  if (error) console.error("guardarRefConvite:", error.message);
 }
 
 
@@ -2849,7 +2853,9 @@ export default function App() {
   const [userId, setUserId] = useState(null);       // id do utilizador autenticado (Supabase)
   const [aCarregar, setACarregar] = useState(true); // a verificar sessão ao arrancar
   const saveTimer = useRef(null);
-  const primeiraGravacao = useRef(true);
+  // SÓ permitir gravar em perfis.dados DEPOIS de o perfil ter sido carregado do Supabase.
+  // Isto impede que o estado inicial vazio sobrescreva (apague) os dados já guardados.
+  const podeGravar = useRef(false);
 
   // Cache local imediato (offline) sempre que o estado muda.
   useEffect(() => {
@@ -2866,12 +2872,19 @@ export default function App() {
           setUserId(session.user.id);
           const perfil = await carregarPerfil(session.user.id);
           if (perfil && vivo) {
-            const dados = perfil.dados && Object.keys(perfil.dados).length ? perfil.dados : {};
-            setState(prev => ({ ...INIT, ...prev, ...dados, email: perfil.email || prev.email }));
-            setScreen(dados.setup ? "dashboard" : "setup");
+            const dados = perfil.dados && Object.keys(perfil.dados).length ? perfil.dados : null;
+            if (dados) {
+              setState(prev => ({ ...INIT, ...prev, ...dados, email: perfil.email || prev.email }));
+              setScreen(dados.setup ? "dashboard" : "setup");
+            } else {
+              // Sem dados no servidor ainda: mantém o que houver em cache local, vai ao setup
+              setScreen("setup");
+            }
           } else if (vivo) {
             setScreen("setup");
           }
+          // A partir daqui é seguro gravar (o perfil já foi lido)
+          if (vivo) podeGravar.current = true;
         }
       } catch (e) { console.error("sessão:", e); }
       finally { if (vivo) setACarregar(false); }
@@ -2885,9 +2898,10 @@ export default function App() {
   }, []);
 
   // Guardar o estado no Supabase, com debounce (evita gravar a cada tecla).
+  // Só grava depois de o perfil ter sido carregado (podeGravar), para nunca
+  // sobrescrever perfis.dados com um estado inicial vazio.
   useEffect(() => {
-    if (!userId) return;
-    if (primeiraGravacao.current) { primeiraGravacao.current = false; return; }
+    if (!userId || !podeGravar.current) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => { guardarDados(userId, state); }, 1200);
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
@@ -2952,10 +2966,12 @@ export default function App() {
   const handleAuth = async (email, user) => {
     if (user?.id) {
       setUserId(user.id);
-      // Se veio por convite (?ref=CODIGO no link), registar o relacionamento
+      // Se veio por convite (?ref=CODIGO no link), guardar o código no perfil de forma
+      // segura (sem violar o RLS de convites). O relacionamento em "convites" será criado
+      // por uma Edge Function/RPC segura no backend (ver [PENDENTE-BACKEND]).
       try {
         const ref = new URLSearchParams(window.location.search).get("ref");
-        if (ref) await registarConvite(ref, user.id);
+        if (ref) await guardarRefConvite(user.id, ref);
       } catch (e) {}
       // Carregar perfil (caso já exista de um login anterior)
       const perfil = await carregarPerfil(user.id);
@@ -2963,8 +2979,10 @@ export default function App() {
       if (dados) {
         setState(prev => ({ ...INIT, ...prev, ...dados, conta: true, email }));
         setScreen(dados.setup ? "dashboard" : "setup");
+        podeGravar.current = true; // perfil lido → seguro gravar
         return;
       }
+      podeGravar.current = true; // conta nova, sem dados a apagar → seguro gravar
     }
     setState(prev => ({ ...prev, conta: true, email }));
     setScreen("setup");
@@ -2972,6 +2990,7 @@ export default function App() {
 
   const handleLogout = async () => {
     try { await supabase.auth.signOut(); } catch (e) {}
+    podeGravar.current = false;
     setUserId(null);
     try { window.localStorage.removeItem("klaco_state"); } catch (e) {}
     setState(INIT);
