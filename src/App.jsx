@@ -2940,7 +2940,8 @@ export default function App() {
   //       (marcar a conta como estado='ativo' permanente), em vez de estar no código.
   const CONTAS_LIVRES = ["jezreelalfredo@hotmail.com"];
   const contaLivre = state.email && CONTAS_LIVRES.includes(String(state.email).trim().toLowerCase());
-  const trialExpired = state.setup && trialDaysUsed >= TRIAL_DAYS && !contaLivre;
+  //const trialExpired = state.setup && trialDaysUsed >= TRIAL_DAYS && !contaLivre;
+  const trialExpired = false;
 
   const handleDispensarDica = () => {
     setState(prev => ({ ...prev, dicaRegistoMostrada: true }));
