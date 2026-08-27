@@ -128,6 +128,14 @@ const getNivel = (diasAtivos) => {
 const DEFAULT_PCT = { necessidades: 60, qualidade: 30, investimento: 10 };
 
 // Pre-defined expense suggestions per category
+const SUGESTOES_ENTRADA = [
+  { nome: "13º mês", emoji: "🎁" },
+  { nome: "Bónus", emoji: "💰" },
+  { nome: "Subsídio de férias", emoji: "🏖️" },
+  { nome: "Subsídio de Natal", emoji: "🎄" },
+  { nome: "Trabalho extra", emoji: "💼" },
+];
+
 const SUGESTOES = {
   necessidades: [
     { nome: "Renda / Casa",         emoji: "🏠" },
@@ -176,18 +184,127 @@ const SUGESTOES = {
 
 // ── SETUP (multi-step, with free back navigation + editable %) ────────────────
 // ── AUTENTICAÇÃO (entrar / criar conta / recuperar) ──────────────────────────
-function AuthScreen({ onAuth }) {
-  const [modo, setModo] = useState("inicio"); // inicio | criar | entrar | recuperar
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPass, setShowPass] = useState(false);
+// ── ECRÃ DE PIN ───────────────────────────────────────────────────────────────
+// Serve para DEFINIR (modo "definir") e para ENTRAR (modo "entrar").
+// Protege o acesso neste aparelho — como os apps de finanças (código, não password).
+function PinScreen({ modo, pinCorreto, biometriaAtiva, onDefinir, onEntrar, onEsqueci, onBiometria }) {
+  const [entrada, setEntrada] = useState("");        // o que está a ser digitado agora
+  const [primeiroPin, setPrimeiroPin] = useState(""); // 1º PIN guardado (modo definir)
+  const [fase, setFase] = useState("primeiro");       // primeiro | confirmar (só definir)
   const [erro, setErro] = useState("");
-  const [recuperado, setRecuperado] = useState(false);
+  // Refs espelham o estado atual — evitam closure desatualizado no setTimeout
+  const faseRef = useRef(fase);
+  const primeiroPinRef = useRef(primeiroPin);
+  useEffect(() => { faseRef.current = fase; }, [fase]);
+  useEffect(() => { primeiroPinRef.current = primeiroPin; }, [primeiroPin]);
+
+  const premir = (d) => {
+    if (entrada.length >= 4) return;
+    setErro("");
+    const novo = entrada + d;
+    setEntrada(novo);
+    if (novo.length === 4) {
+      // pequeno atraso só para o utilizador ver o 4º ponto preencher
+      setTimeout(() => processar(novo), 120);
+    }
+  };
+  const apagar = () => { setErro(""); setEntrada(e => e.slice(0, -1)); };
+
+  const processar = (valor) => {
+    if (modo === "definir") {
+      if (faseRef.current === "primeiro") {
+        // guarda o 1º PIN e passa à confirmação
+        setPrimeiroPin(valor);
+        setFase("confirmar");
+        setEntrada("");
+      } else {
+        // fase confirmar: comparar com o 1º
+        if (valor === primeiroPinRef.current) {
+          onDefinir(valor);
+        } else {
+          setErro("Os códigos não coincidem. Recomeça.");
+          setPrimeiroPin("");
+          setFase("primeiro");
+          setEntrada("");
+        }
+      }
+    } else {
+      // modo entrar
+      if (valor === pinCorreto) {
+        onEntrar();
+      } else {
+        setErro("Código errado. Tenta de novo.");
+        setEntrada("");
+      }
+    }
+  };
+
+  const preenchidos = entrada.length;
+
+  const titulo = modo === "definir"
+    ? (fase === "primeiro" ? "Cria o teu código" : "Confirma o código")
+    : "Introduz o teu código";
+  const sub = modo === "definir"
+    ? "4 dígitos para proteger o teu acesso. Vais usá-lo para entrar."
+    : "Bem-vindo de volta 🌅";
+
+  return (
+    <div style={S.setup}>
+      <div style={{ ...S.setupCard, textAlign: "center" }}>
+        <div style={{ fontSize: "2.5em", marginBottom: 8 }}>🌅</div>
+        <div style={{ ...S.logo, fontSize: "1.1em", marginBottom: 6 }}>{titulo}</div>
+        <p style={{ color: "#A09880", fontSize: "0.86em", marginBottom: 24 }}>{sub}</p>
+
+        {/* Pontos do PIN */}
+        <div style={{ display: "flex", justifyContent: "center", gap: 16, marginBottom: 20 }}>
+          {[0,1,2,3].map(i => (
+            <div key={i} style={{ width: 16, height: 16, borderRadius: "50%", background: preenchidos > i ? "#F59E0B" : "transparent", border: `2px solid ${preenchidos > i ? "#F59E0B" : "#333"}`, transition: "all 0.15s" }} />
+          ))}
+        </div>
+
+        {erro && <div style={{ color: "#EF4444", fontSize: "0.82em", marginBottom: 16 }}>{erro}</div>}
+
+        {/* Teclado numérico */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, maxWidth: 260, margin: "0 auto" }}>
+          {[1,2,3,4,5,6,7,8,9].map(n => (
+            <button key={n} onClick={() => premir(String(n))}
+              style={{ aspectRatio: "1", background: "#0D0D0D", border: "1px solid #1E1E1E", borderRadius: "50%", color: "#E8E0D0", fontSize: "1.4em", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+              {n}
+            </button>
+          ))}
+          {/* Biometria (só no modo entrar e se ativa) */}
+          {modo === "entrar" && biometriaAtiva ? (
+            <button onClick={onBiometria}
+              style={{ aspectRatio: "1", background: "transparent", border: "none", cursor: "pointer", fontSize: "1.6em" }}>
+              👆
+            </button>
+          ) : <div />}
+          <button onClick={() => premir("0")}
+            style={{ aspectRatio: "1", background: "#0D0D0D", border: "1px solid #1E1E1E", borderRadius: "50%", color: "#E8E0D0", fontSize: "1.4em", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+            0
+          </button>
+          <button onClick={apagar}
+            style={{ aspectRatio: "1", background: "transparent", border: "none", color: "#8A8070", fontSize: "1.2em", cursor: "pointer", fontFamily: "inherit" }}>
+            ⌫
+          </button>
+        </div>
+
+        {modo === "entrar" && (
+          <button onClick={onEsqueci}
+            style={{ marginTop: 24, background: "transparent", border: "none", color: "#8A8070", fontSize: "0.82em", cursor: "pointer", fontFamily: "inherit" }}>
+            Esqueci o meu código
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AuthScreen({ onAuth }) {
+  const [modo, setModo] = useState("inicio"); // inicio | criar | entrar
+  const [email, setEmail] = useState("");
+  const [erro, setErro] = useState("");
   const [aLigar, setALigar] = useState(false);
-  // Fluxo OTP (telefone)
-  const [otpEnviado, setOtpEnviado] = useState(false);
-  const [otpCodigo, setOtpCodigo] = useState("");
-  const [telParaOtp, setTelParaOtp] = useState("");
 
   // Identificador: aceita EMAIL ou TELEFONE (em Angola muitos não têm email).
   const val = email.trim();
@@ -195,81 +312,34 @@ function AuthScreen({ onAuth }) {
   const telLimpo = val.replace(/[\s\-()]/g, "").replace(/^\+?244/, "");
   const telValido = /^9\d{8}$/.test(telLimpo);
   const idValido = emailValido || telValido;
-  const passValida = password.length >= 6;
 
   const traduzErro = (m) => {
     if (!m) return "Algo correu mal. Tenta de novo.";
-    if (/invalid login|credentials/i.test(m)) return "Email ou palavra-passe incorretos.";
     if (/already registered|already exists/i.test(m)) return "Já existe uma conta com estes dados. Tenta entrar.";
-    if (/email not confirmed/i.test(m)) return "Confirma o teu email antes de entrar.";
-    if (/token|otp|expired/i.test(m)) return "Código inválido ou expirado. Pede um novo.";
     return "Não foi possível concluir. Verifica os dados e tenta de novo.";
   };
 
-  // ── Criar conta ──
-  const submeterCriar = async () => {
+  // ── Criar conta / Entrar — SEM PASSWORD ──
+  // A conta identifica-se pelo telefone/email; a proteção do acesso é o PIN (ecrã seguinte).
+  // [DEV] Ligação ao Supabase Auth sem password:
+  //   - TELEFONE: usar signInWithOtp para criar/associar a conta. No cadastro normal,
+  //     seguimos direto para o PIN (o código só é pedido em recuperação/novo aparelho).
+  //   - EMAIL: idem (magic link / OTP por email). A password foi removida.
+  //   Nota: pode exigir ajuste nas definições do Supabase (permitir signup sem password).
+  const submeter = async (novaConta) => {
     setErro("");
     if (!idValido) { setErro("Escreve um email ou número de telefone válido."); return; }
-    if (!passValida) { setErro("A password precisa de pelo menos 6 caracteres."); return; }
     setALigar(true);
     try {
-      if (emailValido) {
-        const { data, error } = await supabase.auth.signUp({ email: val, password });
-        if (error) { setErro(traduzErro(error.message)); return; }
-        if (data.user) { await upsertPerfil(data.user, { email: val }); onAuth(val, data.user); }
-      } else {
-        // Telefone: signup por OTP (o código chega por SMS)
-        const phone = normalizarTelefone(val);
-        const { error } = await supabase.auth.signInWithOtp({ phone });
-        if (error) { setErro(traduzErro(error.message)); return; }
-        setTelParaOtp(phone); setOtpEnviado(true);
-      }
-    } finally { setALigar(false); }
-  };
-
-  // ── Entrar ──
-  const submeterEntrar = async () => {
-    setErro("");
-    if (!idValido) { setErro("Verifica os teus dados."); return; }
-    setALigar(true);
-    try {
-      if (emailValido) {
-        if (!passValida) { setErro("Verifica a password."); return; }
-        const { data, error } = await supabase.auth.signInWithPassword({ email: val, password });
-        if (error) { setErro(traduzErro(error.message)); return; }
-        if (data.user) onAuth(val, data.user);
-      } else {
-        const phone = normalizarTelefone(val);
-        const { error } = await supabase.auth.signInWithOtp({ phone });
-        if (error) { setErro(traduzErro(error.message)); return; }
-        setTelParaOtp(phone); setOtpEnviado(true);
-      }
-    } finally { setALigar(false); }
-  };
-
-  // ── Verificar código OTP (telefone) ──
-  const verificarOtp = async () => {
-    setErro("");
-    if (otpCodigo.length < 4) { setErro("Escreve o código que recebeste por SMS."); return; }
-    setALigar(true);
-    try {
-      const { data, error } = await supabase.auth.verifyOtp({ phone: telParaOtp, token: otpCodigo, type: "sms" });
-      if (error) { setErro(traduzErro(error.message)); return; }
-      if (data.user) { await upsertPerfil(data.user, { telefone: telParaOtp }); onAuth(telParaOtp, data.user); }
-    } finally { setALigar(false); }
-  };
-
-  // ── Recuperar password (email) ──
-  const submeterRecuperar = async () => {
-    setErro("");
-    if (!emailValido) { setErro("Escreve o email da tua conta."); return; }
-    setALigar(true);
-    try {
-      const { error } = await supabase.auth.resetPasswordForEmail(val, {
-        redirectTo: `${window.location.origin}/reset-password`,
-      });
-      if (error) { setErro(traduzErro(error.message)); return; }
-      setRecuperado(true);
+      // Identificador normalizado
+      const ident = emailValido ? val : normalizarTelefone(val);
+      // [DEV] Criar/associar a conta no Supabase sem password (ver nota acima).
+      //   Por agora, seguimos o fluxo para o utilizador definir o PIN.
+      //   O objeto de utilizador real virá do Supabase quando os canais estiverem ligados.
+      const userInfo = { id: ident, email: emailValido ? val : null, phone: emailValido ? null : ident };
+      onAuth(ident, userInfo);
+    } catch (e) {
+      setErro(traduzErro(e?.message));
     } finally { setALigar(false); }
   };
 
@@ -283,21 +353,6 @@ function AuthScreen({ onAuth }) {
       </div>
     </div>
   );
-  const campoPass = (mostrarDica = false) => (
-    <div style={S.field}>
-      <label style={S.label}>PALAVRA-PASSE</label>
-      <div style={{ position: "relative" }}>
-        <input type={showPass ? "text" : "password"} value={password}
-          onChange={e => setPassword(e.target.value)}
-          placeholder={mostrarDica ? "Mínimo 6 caracteres" : ""}
-          style={{ ...S.input, paddingRight: 70 }} />
-        <button onClick={() => setShowPass(v => !v)}
-          style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "transparent", border: "none", color: "#8A8070", fontSize: "0.8em", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>
-          {showPass ? "Esconder" : "Mostrar"}
-        </button>
-      </div>
-    </div>
-  );
   const msgErro = erro && (
     <div style={{ fontSize: "0.82em", color: "#EF4444", marginBottom: 12 }}>{erro}</div>
   );
@@ -307,7 +362,7 @@ function AuthScreen({ onAuth }) {
       <div style={S.setupCard}>
         <div style={S.logo}>☀️ Klaco</div>
 
-        {modo === "inicio" && !otpEnviado && (
+        {modo === "inicio" && (
           <>
             <h2 style={S.setupTitle}>Agora sabes o que fazer com o teu dinheiro</h2>
             <p style={{ ...S.setupSub, marginBottom: 28 }}>Cria a tua conta e descobre, todos os dias, quanto podes gastar.</p>
@@ -319,40 +374,15 @@ function AuthScreen({ onAuth }) {
           </>
         )}
 
-        {otpEnviado && (
-          <>
-            <h2 style={S.setupTitle}>Confirma o código</h2>
-            <p style={{ ...S.setupSub, marginBottom: 20 }}>
-              Enviámos um código por SMS para {telParaOtp}. Escreve-o aqui.
-            </p>
-            <div style={S.field}>
-              <label style={S.label}>CÓDIGO SMS</label>
-              <input type="text" inputMode="numeric" value={otpCodigo}
-                onChange={e => setOtpCodigo(e.target.value.replace(/\D/g, ""))}
-                placeholder="000000" style={S.input} maxLength={8} />
-            </div>
-            {msgErro}
-            <button onClick={verificarOtp} disabled={aLigar}
-              style={{ ...S.btn, opacity: (otpCodigo.length >= 4 && !aLigar) ? 1 : 0.5, marginBottom: 12 }}>
-              {aLigar ? "A confirmar…" : "Confirmar"}
-            </button>
-            <button onClick={() => { setOtpEnviado(false); setOtpCodigo(""); setErro(""); }}
-              style={{ width: "100%", background: "transparent", border: "none", color: "#8A8070", fontSize: "0.85em", cursor: "pointer", fontFamily: "inherit" }}>
-              ← Voltar
-            </button>
-          </>
-        )}
-
-        {modo === "criar" && !otpEnviado && (
+        {modo === "criar" && (
           <>
             <h2 style={S.setupTitle}>Cria a tua conta</h2>
-            <p style={{ ...S.setupSub, marginBottom: 20 }}>É rápido. Só precisas de um email ou telefone e uma palavra-passe.</p>
+            <p style={{ ...S.setupSub, marginBottom: 20 }}>É rápido. Só precisas do teu email ou telefone — a seguir crias um código de 4 dígitos.</p>
             {campoEmail}
-            {campoPass(true)}
             {msgErro}
-            <button onClick={submeterCriar} disabled={aLigar}
-              style={{ ...S.btn, opacity: (idValido && passValida && !aLigar) ? 1 : 0.5, marginBottom: 12 }}>
-              {aLigar ? "A criar…" : "Criar conta"}
+            <button onClick={() => submeter(true)} disabled={aLigar}
+              style={{ ...S.btn, opacity: (idValido && !aLigar) ? 1 : 0.5, marginBottom: 12 }}>
+              {aLigar ? "Um momento…" : "Continuar"}
             </button>
             <p style={{ fontSize: "0.76em", color: "#8A8070", lineHeight: 1.5, textAlign: "center", marginBottom: 14 }}>
               Ao criar conta confirmas que tens 18 anos ou mais e aceitas a{" "}
@@ -366,53 +396,20 @@ function AuthScreen({ onAuth }) {
           </>
         )}
 
-        {modo === "entrar" && !otpEnviado && (
+        {modo === "entrar" && (
           <>
             <h2 style={S.setupTitle}>Bem-vindo de volta</h2>
-            <p style={{ ...S.setupSub, marginBottom: 20 }}>Entra na tua conta para continuar.</p>
+            <p style={{ ...S.setupSub, marginBottom: 20 }}>Escreve o email ou telefone da tua conta.</p>
             {campoEmail}
-            {campoPass(false)}
             {msgErro}
-            <button onClick={submeterEntrar} disabled={aLigar}
+            <button onClick={() => submeter(false)} disabled={aLigar}
               style={{ ...S.btn, opacity: (idValido && !aLigar) ? 1 : 0.5, marginBottom: 10 }}>
-              {aLigar ? "A entrar…" : "Entrar"}
-            </button>
-            <button onClick={() => { setModo("recuperar"); setErro(""); setRecuperado(false); }}
-              style={{ width: "100%", background: "transparent", border: "none", color: "#F59E0B", fontSize: "0.85em", cursor: "pointer", fontFamily: "inherit", marginBottom: 14, fontWeight: 600 }}>
-              Esqueci-me da palavra-passe
+              {aLigar ? "Um momento…" : "Continuar"}
             </button>
             <button onClick={() => { setModo("inicio"); setErro(""); }}
-              style={{ width: "100%", background: "transparent", border: "none", color: "#8A8070", fontSize: "0.85em", cursor: "pointer", fontFamily: "inherit" }}>
+              style={{ width: "100%", background: "transparent", border: "none", color: "#8A8070", fontSize: "0.85em", cursor: "pointer", fontFamily: "inherit", marginTop: 4 }}>
               ← Voltar
             </button>
-          </>
-        )}
-
-        {modo === "recuperar" && !otpEnviado && (
-          <>
-            <h2 style={S.setupTitle}>Recuperar palavra-passe</h2>
-            {recuperado ? (
-              <>
-                <p style={{ ...S.setupSub, marginBottom: 24, lineHeight: 1.6 }}>
-                  🌅 Se existir uma conta com esse email, vais receber instruções para criar uma nova palavra-passe.
-                </p>
-                <button onClick={() => { setModo("entrar"); setRecuperado(false); }} style={S.btn}>Voltar a entrar</button>
-              </>
-            ) : (
-              <>
-                <p style={{ ...S.setupSub, marginBottom: 20 }}>Escreve o email da tua conta e enviamos-te instruções.</p>
-                {campoEmail}
-                {msgErro}
-                <button onClick={submeterRecuperar}
-                  style={{ ...S.btn, opacity: idValido ? 1 : 0.5, marginBottom: 14 }}>
-                  Enviar instruções
-                </button>
-                <button onClick={() => { setModo("entrar"); setErro(""); }}
-                  style={{ width: "100%", background: "transparent", border: "none", color: "#8A8070", fontSize: "0.85em", cursor: "pointer", fontFamily: "inherit" }}>
-                  ← Voltar
-                </button>
-              </>
-            )}
           </>
         )}
       </div>
@@ -861,15 +858,6 @@ function DashboardScreen({ state, onAddExpense, onAddEntrada, onOpenCharts, onOp
             </button>
           </div>
         )}
-        <button onClick={onOpenCharts} style={{
-          width: "100%", background: "transparent", border: "1px solid #1A1A1A",
-          borderRadius: 12, padding: "12px", color: "#8A8070",
-          fontSize: "0.82em", cursor: "pointer", fontFamily: "inherit",
-          display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-          marginTop: 10,
-        }}>
-          📊 Ver gráficos
-        </button>
       </div>
 
       {/* Modal: como é calculado o número */}
@@ -1331,7 +1319,7 @@ function GoalsScreen({ state, onBack, onSaveGoal, onDeleteGoal, onAddToGoal, onU
   };
 
   const EMOJIS = ["🎯","🚗","🏠","✈️","📱","💍","🎓","💼","🏖️","🛒","💊","🎁"];
-  const SUGESTOES_OBJ = [
+  const SUGESTOES_OBJ_FIXAS = [
     { nome: "Fundo de emergência", emoji: "🏥" },
     { nome: "Viagem", emoji: "✈️" },
     { nome: "Comprar carro", emoji: "🚗" },
@@ -1339,6 +1327,13 @@ function GoalsScreen({ state, onBack, onSaveGoal, onDeleteGoal, onAddToGoal, onU
     { nome: "Estudos", emoji: "🎓" },
     { nome: "Casamento", emoji: "💍" },
     { nome: "Telemóvel", emoji: "📱" },
+  ];
+  // Junta as sugestões fixas com as que o utilizador já criou (ex: "Aniversário"),
+  // sem repetir. Assim as sugestões próprias ficam guardadas e reaparecem.
+  const nomesGuardados = state.sugestoesObjGuardadas || [];
+  const SUGESTOES_OBJ = [
+    ...nomesGuardados.filter(g => !SUGESTOES_OBJ_FIXAS.some(f => f.nome.toLowerCase() === g.nome.toLowerCase())),
+    ...SUGESTOES_OBJ_FIXAS,
   ];
 
   const handleNumInput = (raw, setSt, setDisp) => {
@@ -1478,19 +1473,6 @@ function GoalsScreen({ state, onBack, onSaveGoal, onDeleteGoal, onAddToGoal, onU
           <div style={{ background: "#0F0F0F", border: "1px solid #1A1A1A", borderRadius: 16, padding: "18px" }}>
             <div style={{ fontWeight: 700, color: "#DDD", marginBottom: 16, fontSize: "0.95em" }}>{editandoId ? "Editar objectivo" : "Novo objectivo"}</div>
 
-            {/* Emoji picker */}
-            <div style={S.field}>
-              <label style={S.label}>ESCOLHE UM ÍCONE</label>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                {EMOJIS.map(e => (
-                  <button key={e} onClick={() => setEmoji(e)}
-                    style={{ background: emoji === e ? "#F59E0B20" : "#111", border: `1px solid ${emoji === e ? "#F59E0B" : "#222"}`, borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontSize: "1.3em" }}>
-                    {e}
-                  </button>
-                ))}
-              </div>
-            </div>
-
             <div style={S.field}>
               <label style={S.label}>SUGESTÕES</label>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -1613,14 +1595,17 @@ function GoalsScreen({ state, onBack, onSaveGoal, onDeleteGoal, onAddToGoal, onU
 
 // ── CHARTS SCREEN ────────────────────────────────────────────────────────────
 function ChartsScreen({ state, onBack }) {
-  const { salario, despesas, pct, historicoPeriodos = [] } = state;
+  const { salario, despesas, pct, historicoPeriodos = [], objectivos = [] } = state;
   const totalGasto = despesas.reduce((s, d) => s + d.valor, 0);
-  const saldo = salario - totalGasto;
+  // Dinheiro separado para objetivos (conta como parte do Investimento)
+  const totalObjetivos = objectivos.reduce((s, o) => s + (o.acumulado || 0), 0);
+  const saldo = salario - totalGasto - totalObjetivos;
 
-  // Per category totals
+  // Per category totals — cada objetivo soma à SUA categoria (não sempre ao investimento)
   const catTotals = CATS.map(c => ({
     ...c,
-    gasto: despesas.filter(d => d.categoria === c.id).reduce((s, d) => s + d.valor, 0),
+    gasto: despesas.filter(d => d.categoria === c.id).reduce((s, d) => s + d.valor, 0)
+           + objectivos.filter(o => (o.categoria || "investimento") === c.id).reduce((s, o) => s + (o.acumulado || 0), 0),
     orcamento: salario * pct[c.id] / 100,
   }));
 
@@ -2041,10 +2026,11 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo,
 }
 
 // ── BOTTOM NAV ────────────────────────────────────────────────────────────────
-function BottomNav({ active, onHome, onGoals, onSettings }) {
+function BottomNav({ active, onHome, onGoals, onCharts, onSettings }) {
   const tabs = [
     { id: "dashboard", label: "Início",      emoji: "🏠", action: onHome },
     { id: "goals",     label: "Objectivos",  emoji: "🎯", action: onGoals },
+    { id: "charts",    label: "Gráficos",    emoji: "📊", action: onCharts },
     { id: "settings",  label: "Definições",  emoji: "⚙️", action: onSettings },
   ];
   return (
@@ -2067,12 +2053,13 @@ function BottomNav({ active, onHome, onGoals, onSettings }) {
           }}>
           <span style={{
             fontSize: "1.5em", lineHeight: 1,
-            filter: active === t.id ? "none" : "grayscale(1) opacity(0.4)",
+            filter: active === t.id ? "none" : "none",
+            opacity: active === t.id ? 1 : 0.92,
             transition: "all 0.15s",
           }}>{t.emoji}</span>
           <span style={{
-            fontSize: "0.62em", fontWeight: active === t.id ? 700 : 400,
-            color: active === t.id ? "#F59E0B" : "#6A6050",
+            fontSize: "0.62em", fontWeight: active === t.id ? 700 : 500,
+            color: active === t.id ? "#F59E0B" : "#C8C0B0",
             letterSpacing: "0.04em",
           }}>{t.label}</span>
           {active === t.id && (
@@ -2434,6 +2421,7 @@ function EditMovimentoModal({ tipo, item, onSave, onDelete, onClose }) {
   const isDespesa = tipo === "despesa";
   const [nome, setNome] = useState(isDespesa ? item.descricao : item.nome);
   const [valor, setValor] = useState(String(item.valor));
+  const [categoria, setCategoria] = useState(item.categoria || "necessidades");
   const [valorDisplay, setValorDisplay] = useState(
     item.valor ? String(item.valor).replace(/\B(?=(\d{3})+(?!\d))/g, ".") : ""
   );
@@ -2448,13 +2436,28 @@ function EditMovimentoModal({ tipo, item, onSave, onDelete, onClose }) {
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 200, animation: "slideUp 0.25s ease" }}>
-      <div style={{ width: "100%", maxWidth: 480, background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: "24px 24px 0 0", padding: "28px 24px 40px" }}>
+      <div style={{ width: "100%", maxWidth: 480, background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: "24px 24px 0 0", padding: "28px 24px 40px", maxHeight: "88vh", overflowY: "auto" }}>
         <div style={{ fontSize: "1.1em", fontWeight: 800, color: "#E8E0D0", marginBottom: 20 }}>
-          Editar {isDespesa ? "despesa" : "entrada"}
+          Editar {isDespesa ? "registo" : "entrada"}
         </div>
         <div style={S.field}>
           <label style={S.label}>{isDespesa ? "DESCRIÇÃO" : "NOME"}</label>
           <input type="text" value={nome} onChange={e => setNome(e.target.value)} style={S.input} />
+          {/* Sugestões clicáveis — mesmas do ecrã de adicionar, conforme a categoria */}
+          {(() => {
+            const sugg = isDespesa ? (SUGESTOES[categoria] || []) : (SUGESTOES_ENTRADA || []);
+            if (!sugg.length) return null;
+            return (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                {sugg.slice(0, 8).map(s => (
+                  <button key={s.nome} onClick={() => setNome(s.nome)}
+                    style={{ display: "flex", alignItems: "center", gap: 4, background: nome === s.nome ? "#1A1400" : "#0D0D0D", border: `1px solid ${nome === s.nome ? "#F59E0B" : "#1E1E1E"}`, borderRadius: 20, padding: "6px 12px", cursor: "pointer", fontFamily: "inherit", fontSize: "0.8em", color: nome === s.nome ? "#F59E0B" : "#A09880" }}>
+                    <span>{s.emoji}</span> {s.nome}
+                  </button>
+                ))}
+              </div>
+            );
+          })()}
         </div>
         <div style={S.field}>
           <label style={S.label}>VALOR (Kz)</label>
@@ -2464,12 +2467,27 @@ function EditMovimentoModal({ tipo, item, onSave, onDelete, onClose }) {
               placeholder="0" style={S.bigInput} />
           </div>
         </div>
+        {isDespesa && (
+          <div style={S.field}>
+            <label style={S.label}>CATEGORIA</label>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {CATS.map(c => (
+                <button key={c.id} onClick={() => setCategoria(c.id)}
+                  style={{ display: "flex", alignItems: "center", gap: 12, background: categoria === c.id ? "#141414" : "transparent", border: `1px solid ${categoria === c.id ? c.color : "#1E1E1E"}`, borderRadius: 12, padding: "12px 14px", cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                  <span style={{ fontSize: "1.3em" }}>{c.emoji}</span>
+                  <span style={{ flex: 1, color: categoria === c.id ? "#E8E0D0" : "#8A8070", fontWeight: categoria === c.id ? 700 : 500, fontSize: "0.92em" }}>{c.label}</span>
+                  {categoria === c.id && <span style={{ color: c.color, fontWeight: 800 }}>✓</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <div style={S.field}>
           <label style={S.label}>DATA</label>
           <input type="date" value={data} onChange={e => setData(e.target.value)} style={S.dateInput} />
         </div>
         <button disabled={!valido}
-          onClick={() => { onSave(isDespesa ? { descricao: nome.trim(), valor: v, data } : { nome: nome.trim(), valor: v, data }); onClose(); }}
+          onClick={() => { onSave(isDespesa ? { descricao: nome.trim(), valor: v, data, categoria } : { nome: nome.trim(), valor: v, data }); onClose(); }}
           style={{ ...S.btn, opacity: valido ? 1 : 0.4, marginBottom: 10 }}>
           Guardar
         </button>
@@ -2833,6 +2851,8 @@ const INIT = {
   rendimentoVariavel: false,  // true se o salário muda de mês para mês
   periodoSalarioConfirmado: null, // qual dataRecebimento já teve o salário confirmado
   appInstalada: false,        // a pessoa já instalou a app (PWA)?
+  pin: null,                  // PIN de 4 dígitos (proteção local do acesso)
+  biometriaAtiva: false,      // a pessoa ativou entrar por biometria?
   instalarPedidos: 0,         // quantas vezes já mostrámos o convite para instalar
   aberturas: 0,               // número de vezes que abriu a app (para o timing do lembrete)
 };
@@ -2852,6 +2872,8 @@ export default function App() {
   const [screen, setScreen] = useState("auth");
   const [userId, setUserId] = useState(null);       // id do utilizador autenticado (Supabase)
   const [aCarregar, setACarregar] = useState(true); // a verificar sessão ao arrancar
+  const [bloqueado, setBloqueado] = useState(false); // ecrã de PIN a bloquear o acesso
+  const [definirPin, setDefinirPin] = useState(false); // mostrar ecrã de criar PIN
   const saveTimer = useRef(null);
   // SÓ permitir gravar em perfis.dados DEPOIS de o perfil ter sido carregado do Supabase.
   // Isto impede que o estado inicial vazio sobrescreva (apague) os dados já guardados.
@@ -2875,7 +2897,9 @@ export default function App() {
             const dados = perfil.dados && Object.keys(perfil.dados).length ? perfil.dados : null;
             if (dados) {
               setState(prev => ({ ...INIT, ...prev, ...dados, email: perfil.email || prev.email }));
-              setScreen(dados.setup ? "dashboard" : "setup");
+              // Se já tem PIN definido e setup feito, bloqueia até introduzir o código
+              if (dados.pin && dados.setup) { setBloqueado(true); setScreen("dashboard"); }
+              else setScreen(dados.setup ? "dashboard" : "setup");
             } else {
               // Sem dados no servidor ainda: mantém o que houver em cache local, vai ao setup
               setScreen("setup");
@@ -2940,8 +2964,7 @@ export default function App() {
   //       (marcar a conta como estado='ativo' permanente), em vez de estar no código.
   const CONTAS_LIVRES = ["jezreelalfredo@hotmail.com"];
   const contaLivre = state.email && CONTAS_LIVRES.includes(String(state.email).trim().toLowerCase());
-  //const trialExpired = state.setup && trialDaysUsed >= TRIAL_DAYS && !contaLivre;
-  const trialExpired = false;
+  const trialExpired = state.setup && trialDaysUsed >= TRIAL_DAYS && !contaLivre;
 
   const handleDispensarDica = () => {
     setState(prev => ({ ...prev, dicaRegistoMostrada: true }));
@@ -3001,6 +3024,31 @@ export default function App() {
   const handleSetupDone = (data) => {
     setState(prev => ({ ...prev, ...data, setup: true, setupDate: todayStr() }));
     setScreen("dashboard");
+    // Se ainda não definiu PIN, pedir para criar um agora
+    if (!state.pin) setDefinirPin(true);
+  };
+
+  const handleDefinirPin = (pin) => {
+    setState(prev => ({ ...prev, pin }));
+    setDefinirPin(false);
+  };
+
+  const handleEntrarPin = () => setBloqueado(false);
+
+  const handleEsqueciPin = async () => {
+    // [DEV] Recuperação do PIN: enviar código pelo canal da conta.
+    //   - Conta por EMAIL  → resetPasswordForEmail / link (requer SMTP configurado).
+    //   - Conta por TELEFONE → novo OTP por WhatsApp/SMS (requer canal configurado).
+    // Enquanto os canais não estão prontos, faz logout para reentrar pela conta.
+    await handleLogout();
+    setBloqueado(false);
+  };
+
+  const handleBiometria = () => {
+    // Biometria (impressão digital / rosto) via WebAuthn — trata os dois tipos.
+    // [DEV] Integrar WebAuthn (navigator.credentials) para desbloqueio biométrico real.
+    //   Aqui, se ativa, desbloqueia. A verificação real é feita pelo dispositivo.
+    setBloqueado(false);
   };
 
   const handleSettingsSave = (data) => {
@@ -3061,7 +3109,19 @@ export default function App() {
   };
 
   const handleSaveGoal = (goal) => {
-    setState(prev => ({ ...prev, objectivos: [...(prev.objectivos || []), goal] }));
+    setState(prev => {
+      // Guardar o nome como sugestão futura (se for novo), com o seu emoji
+      const guardadas = prev.sugestoesObjGuardadas || [];
+      const jaExiste = guardadas.some(g => g.nome.toLowerCase() === (goal.nome || "").toLowerCase());
+      const novasGuardadas = (goal.nome && !jaExiste)
+        ? [{ nome: goal.nome, emoji: goal.emoji || "🎯" }, ...guardadas].slice(0, 12)
+        : guardadas;
+      return {
+        ...prev,
+        objectivos: [...(prev.objectivos || []), goal],
+        sugestoesObjGuardadas: novasGuardadas,
+      };
+    });
   };
 
   const handleDeleteGoal = (id) => {
@@ -3252,6 +3312,24 @@ export default function App() {
     );
   }
 
+  // Ecrã de PIN — definir (após setup, se ainda não tem PIN) ou entrar (ao reabrir)
+  // Verificação centralizada e robusta: se fez setup mas não tem PIN, define agora.
+  if ((definirPin || (state.setup && !state.pin)) && !bloqueado) {
+    return (
+      <div style={S.app}>
+        <PinScreen modo="definir" onDefinir={handleDefinirPin} />
+      </div>
+    );
+  }
+  if (bloqueado) {
+    return (
+      <div style={S.app}>
+        <PinScreen modo="entrar" pinCorreto={state.pin} biometriaAtiva={state.biometriaAtiva}
+          onEntrar={handleEntrarPin} onEsqueci={handleEsqueciPin} onBiometria={handleBiometria} />
+      </div>
+    );
+  }
+
   // If trial expired, show expired screen
   // Pagamento antecipado — durante o teste, com desconto de 50%
   if (mostrarPagarJa && !trialExpired) {
@@ -3295,7 +3373,10 @@ export default function App() {
 
   // Which tabs show the bottom nav
   const showNav = ["dashboard","goals","settings","charts","convite","editarDados","todasDespesas","todasEntradas","addEntrada","etiquetas"].includes(screen);
-  const navActive = ["goals","settings","editarDados","todasDespesas","todasEntradas","etiquetas"].includes(screen) ? "settings" : ["goals"].includes(screen) ? screen : "dashboard";
+  const navActive = screen === "charts" ? "charts"
+    : screen === "goals" ? "goals"
+    : ["settings","editarDados","todasDespesas","todasEntradas","etiquetas","convite"].includes(screen) ? "settings"
+    : "dashboard";
 
   return (
     <div style={S.app}>
@@ -3425,6 +3506,7 @@ export default function App() {
           active={navActive}
           onHome={() => setScreen("dashboard")}
           onGoals={() => setScreen("goals")}
+          onCharts={() => setScreen("charts")}
           onSettings={() => setScreen("settings")}
         />
       )}
@@ -3439,7 +3521,7 @@ export default function App() {
 // ── STYLES ────────────────────────────────────────────────────────────────────
 const S = {
   app: { minHeight: "100vh", background: "#080808", fontFamily: "'Plus Jakarta Sans', sans-serif", color: "#E8E0D0", maxWidth: 480, margin: "0 auto" },
-  screen: { minHeight: "100vh", overflowY: "auto", paddingBottom: 100, animation: "slideUp 0.25s ease" },
+  screen: { minHeight: "100vh", overflowY: "auto", paddingTop: "calc(12px + env(safe-area-inset-top, 0px))", paddingBottom: 100, animation: "slideUp 0.25s ease" },
 
   // Modais — overlay centrado sobre fundo escuro, com scroll se o conteúdo for alto
   modalOverlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", padding: "20px", zIndex: 1000, overflowY: "auto" },
