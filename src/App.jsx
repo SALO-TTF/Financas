@@ -326,18 +326,59 @@ function AuthScreen({ onAuth }) {
   //     seguimos direto para o PIN (o código só é pedido em recuperação/novo aparelho).
   //   - EMAIL: idem (magic link / OTP por email). A password foi removida.
   //   Nota: pode exigir ajuste nas definições do Supabase (permitir signup sem password).
+  // Fluxo OTP real do Supabase. O código (OTP) é enviado UMA vez, para criar a
+  // sessão real — é isso que gera o auth.uid() e faz o trigger criar o perfil.
+  const [otpEnviado, setOtpEnviado] = useState(false);
+  const [otpCodigo, setOtpCodigo] = useState("");
+  const [identGuardado, setIdentGuardado] = useState("");
+  const [ehEmail, setEhEmail] = useState(false);
+
   const submeter = async (novaConta) => {
     setErro("");
     if (!idValido) { setErro("Escreve um email ou número de telefone válido."); return; }
     setALigar(true);
     try {
-      // Identificador normalizado
-      const ident = emailValido ? val : normalizarTelefone(val);
-      // [DEV] Criar/associar a conta no Supabase sem password (ver nota acima).
-      //   Por agora, seguimos o fluxo para o utilizador definir o PIN.
-      //   O objeto de utilizador real virá do Supabase quando os canais estiverem ligados.
-      const userInfo = { id: ident, email: emailValido ? val : null, phone: emailValido ? null : ident };
-      onAuth(ident, userInfo);
+      if (emailValido) {
+        // Email: OTP por email (código). O Supabase cria/associa o utilizador.
+        const { error } = await supabase.auth.signInWithOtp({
+          email: val,
+          options: { shouldCreateUser: true },
+        });
+        if (error) { setErro(traduzErro(error.message)); return; }
+        setIdentGuardado(val); setEhEmail(true); setOtpEnviado(true);
+      } else {
+        // Telefone: OTP por SMS/WhatsApp (conforme configurado no Supabase).
+        const phone = normalizarTelefone(val);
+        const { error } = await supabase.auth.signInWithOtp({
+          phone,
+          options: { shouldCreateUser: true },
+        });
+        if (error) { setErro(traduzErro(error.message)); return; }
+        setIdentGuardado(phone); setEhEmail(false); setOtpEnviado(true);
+      }
+    } catch (e) {
+      setErro(traduzErro(e?.message));
+    } finally { setALigar(false); }
+  };
+
+  // Verificar o código OTP → cria a sessão real → user.id real → trigger cria o perfil
+  const verificarOtp = async () => {
+    setErro("");
+    if (otpCodigo.length < 4) { setErro("Escreve o código que recebeste."); return; }
+    setALigar(true);
+    try {
+      const params = ehEmail
+        ? { email: identGuardado, token: otpCodigo, type: "email" }
+        : { phone: identGuardado, token: otpCodigo, type: "sms" };
+      const { data, error } = await supabase.auth.verifyOtp(params);
+      if (error) { setErro(traduzErro(error.message)); return; }
+      if (data?.user) {
+        // Garantir o perfil (o trigger já o cria; isto reforça nome/dados quando houver)
+        await upsertPerfil(data.user, ehEmail ? { email: identGuardado } : { telefone: identGuardado });
+        onAuth(data.user.email || data.user.phone || identGuardado, data.user);
+      } else {
+        setErro("Não foi possível confirmar. Tenta de novo.");
+      }
     } catch (e) {
       setErro(traduzErro(e?.message));
     } finally { setALigar(false); }
@@ -362,7 +403,7 @@ function AuthScreen({ onAuth }) {
       <div style={S.setupCard}>
         <div style={S.logo}>☀️ Klaco</div>
 
-        {modo === "inicio" && (
+        {modo === "inicio" && !otpEnviado && (
           <>
             <h2 style={S.setupTitle}>Agora sabes o que fazer com o teu dinheiro</h2>
             <p style={{ ...S.setupSub, marginBottom: 28 }}>Cria a tua conta e descobre, todos os dias, quanto podes gastar.</p>
@@ -374,7 +415,31 @@ function AuthScreen({ onAuth }) {
           </>
         )}
 
-        {modo === "criar" && (
+        {otpEnviado && (
+          <>
+            <h2 style={S.setupTitle}>Confirma o código</h2>
+            <p style={{ ...S.setupSub, marginBottom: 20 }}>
+              Enviámos um código para {identGuardado}. Escreve-o aqui para confirmares a tua conta.
+            </p>
+            <div style={S.field}>
+              <label style={S.label}>CÓDIGO</label>
+              <input type="text" inputMode="numeric" value={otpCodigo}
+                onChange={e => setOtpCodigo(e.target.value.replace(/\D/g, ""))}
+                placeholder="000000" style={S.input} maxLength={8} autoFocus />
+            </div>
+            {msgErro}
+            <button onClick={verificarOtp} disabled={aLigar}
+              style={{ ...S.btn, opacity: (otpCodigo.length >= 4 && !aLigar) ? 1 : 0.5, marginBottom: 12 }}>
+              {aLigar ? "A confirmar…" : "Confirmar"}
+            </button>
+            <button onClick={() => { setOtpEnviado(false); setOtpCodigo(""); setErro(""); }}
+              style={{ width: "100%", background: "transparent", border: "none", color: "#8A8070", fontSize: "0.85em", cursor: "pointer", fontFamily: "inherit" }}>
+              ← Voltar
+            </button>
+          </>
+        )}
+
+        {modo === "criar" && !otpEnviado && (
           <>
             <h2 style={S.setupTitle}>Cria a tua conta</h2>
             <p style={{ ...S.setupSub, marginBottom: 20 }}>É rápido. Só precisas do teu email ou telefone — a seguir crias um código de 4 dígitos.</p>
@@ -396,7 +461,7 @@ function AuthScreen({ onAuth }) {
           </>
         )}
 
-        {modo === "entrar" && (
+        {modo === "entrar" && !otpEnviado && (
           <>
             <h2 style={S.setupTitle}>Bem-vindo de volta</h2>
             <p style={{ ...S.setupSub, marginBottom: 20 }}>Escreve o email ou telefone da tua conta.</p>
