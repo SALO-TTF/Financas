@@ -1,7 +1,36 @@
 import { useState, useRef, useEffect } from "react";
 import { supabase, normalizarTelefone } from "./lib/supabase";
 
-// ── Supabase: funções de dados ────────────────────────────────────────────────
+// ── Admin: listar utilizadores e ativar pagamento via Edge Function ────────────
+// A segurança está na Edge Function (verifica is_admin). Aqui só usamos a sessão
+// autenticada — NUNCA service_role. Não chamamos a RPC ativar_pagamento diretamente.
+async function listarPerfis() {
+  const { data, error } = await supabase
+    .from("perfis")
+    .select("id, nome, email, telefone, estado, plano, trial_inicio, acesso_ate")
+    .order("atualizado_em", { ascending: false });
+  if (error) { console.error("listarPerfis:", error.message); return []; }
+  return data || [];
+}
+
+async function adminAtivarPagamento({ user_id, plano, valor, dentro_do_trial }) {
+  // Confirma sessão válida
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) {
+    return { ok: false, erro: "Sessão expirada. Entra de novo." };
+  }
+  // Invoca a Edge Function (ela verifica is_admin e chama a RPC no servidor)
+  const { data, error } = await supabase.functions.invoke("admin-ativar-pagamento", {
+    body: { user_id, plano, valor, dentro_do_trial },
+  });
+  if (error) {
+    console.error("admin-ativar-pagamento:", error.message || error);
+    return { ok: false, erro: error.message || "Falha ao ativar o pagamento." };
+  }
+  return { ok: true, data };
+}
+
+
 // Camada fina sobre o Supabase. A lógica da app não muda; estas funções só ligam
 // o estado existente à base de dados. RLS garante que cada utilizador só toca no
 // que é seu. NUNCA usar service_role aqui (só a chave anon, via cliente importado).
@@ -1001,7 +1030,7 @@ function EtiquetasScreen({ etiquetasCustom = {}, onDelete, onBack }) {
   );
 }
 
-function SettingsScreen({ state, onToggleNotif, onBack, onEditarDados, onVerDespesas, onVerEntradas, onOpenConvite, onVerEtiquetas, onOpenPlano, planoSub, onOpenAvaliacao }) {
+function SettingsScreen({ state, onToggleNotif, onBack, onEditarDados, onVerDespesas, onVerEntradas, onOpenConvite, onVerEtiquetas, onOpenPlano, planoSub, onOpenAvaliacao, isAdmin, onOpenAdmin }) {
   // Número de WhatsApp da empresa
   const WHATSAPP_SUPORTE = "244923933353";
   const abrirSuporte = () => {
@@ -1047,6 +1076,9 @@ function SettingsScreen({ state, onToggleNotif, onBack, onEditarDados, onVerDesp
         <div style={{ width: 60 }} />
       </div>
       <div style={{ padding: "0 16px" }}>
+        {isAdmin && (
+          <Opcao emoji="🛠️" titulo="Painel de administração" sub="Gerir utilizadores e confirmar pagamentos" onClick={onOpenAdmin} cor="#F59E0B" />
+        )}
         <Opcao emoji="⭐" titulo="Meu plano" sub={planoSub} onClick={onOpenPlano} cor="#F59E0B" />
         <Opcao emoji="👤" titulo="Editar os meus dados" sub="Nome, rendimento, datas e percentagens" onClick={onEditarDados} />
         <Opcao emoji="🛒" titulo="Todas as despesas" sub="Ver, editar ou apagar" onClick={onVerDespesas} />
@@ -1931,19 +1963,12 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo,
 
   // Preços: com desconto (dentro do teste) vs cheio (depois)
   const PRECO = {
-    anual:  { normal: "10.000 Kz", desconto: "5.000 Kz", periodo: "por ano", nome: "Anual" },
-    mensal: { normal: "1.000 Kz",  desconto: "500 Kz",   periodo: "por mês", nome: "Mensal" },
+    anual:  { normal: "12.000 Kz", desconto: "6.000 Kz", periodo: "por ano", nome: "Anual" },
+    mensal: { normal: "1.000 Kz",  desconto: "1.000 Kz", periodo: "por mês", nome: "Mensal" },
   };
   const p = PRECO[plano];
   const valorAtual = dentroDoTeste ? p.desconto : p.normal;
   const dados = { valor: valorAtual, periodo: p.periodo, nome: p.nome };
-
-  // Métodos de pagamento (visual para demo; ligam ao gateway quando a AppyPay estiver ativa)
-  const METODOS = [
-    { id: "mcx",     nome: "Multicaixa Express", sub: "Confirmas o pagamento na app MCX Express", emoji: "📲" },
-    { id: "ref",     nome: "Referência",         sub: "Pagas em qualquer ATM ou homebanking",     emoji: "🔢" },
-    { id: "debito",  nome: "Débito direto",      sub: "Debitado diretamente da tua conta",        emoji: "🏦" },
-  ];
 
   // ── ECRÃ DEMO — após escolher um método (representa o hand-off ao gateway) ──
   if (comprovativoEnviado) {
@@ -2014,8 +2039,8 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo,
                   <div style={{ fontSize: "0.95em", fontWeight: 800, color: "#E8E0D0" }}>Anual</div>
                   <div style={{ fontSize: "0.78em", color: "#8A8070", marginTop: 2 }}>
                     {dentroDoTeste
-                      ? <><span style={{ textDecoration: "line-through" }}>10.000 Kz</span> &nbsp;<span style={{ color: "#22C55E", fontWeight: 700 }}>5.000 Kz</span> por ano</>
-                      : <>10.000 Kz por ano</>}
+                      ? <><span style={{ textDecoration: "line-through" }}>12.000 Kz</span> &nbsp;<span style={{ color: "#22C55E", fontWeight: 700 }}>6.000 Kz</span> por ano</>
+                      : <>12.000 Kz por ano</>}
                   </div>
                 </div>
               </div>
@@ -2030,9 +2055,7 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo,
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: "0.95em", fontWeight: 800, color: "#E8E0D0" }}>Mensal</div>
                   <div style={{ fontSize: "0.78em", color: "#8A8070", marginTop: 2 }}>
-                    {dentroDoTeste
-                      ? <><span style={{ textDecoration: "line-through" }}>1.000 Kz</span> &nbsp;<span style={{ color: "#22C55E", fontWeight: 700 }}>500 Kz</span> no 1º mês</>
-                      : <>1.000 Kz por mês</>}
+                    1.000 Kz por mês
                   </div>
                 </div>
               </div>
@@ -2047,7 +2070,15 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo,
     );
   }
 
-  // ── PÁGINA 2 — ESCOLHA DO MÉTODO DE PAGAMENTO (ponto de integração BAI/AppyPay) ──
+  // ── PÁGINA 2 — PAGAMENTO MANUAL (transferência + comprovativo por WhatsApp) ──
+  // Fase de arranque: sem gateway. A pessoa transfere e envia o comprovativo por WhatsApp.
+  // O admin confirma no painel de administração, o que ativa o acesso.
+  const WHATSAPP = "244952272299";
+  const msgWhats = encodeURIComponent(
+    `Olá! Fiz o pagamento da Klaco (plano ${dados.nome} — ${dados.valor}). Segue o comprovativo.`
+  );
+  const linkWhats = `https://wa.me/${WHATSAPP}?text=${msgWhats}`;
+
   return (
     <div style={S.setup}>
       <div style={S.setupCard}>
@@ -2062,28 +2093,42 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo,
           <span style={{ color: "#F59E0B", fontSize: "1.2em", fontWeight: 800 }}>{dados.valor} <span style={{ fontSize: "0.6em", color: "#8A8070", fontWeight: 600 }}>{dados.periodo}</span></span>
         </div>
 
-        <div style={{ fontSize: "0.78em", fontWeight: 700, letterSpacing: "0.08em", color: "#8A8070", marginBottom: 14 }}>
-          COMO QUERES PAGAR?
+        <div style={{ fontSize: "0.78em", fontWeight: 700, letterSpacing: "0.08em", color: "#8A8070", marginBottom: 12 }}>
+          1. TRANSFERE PARA ESTA CONTA
         </div>
 
-        {/* Métodos de pagamento — ligam ao gateway (AppyPay/BAI) quando ativo */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 18 }}>
-          {METODOS.map(m => (
-            <button key={m.id}
-              onClick={() => onComprovativo(plano)}  // [DEV] iniciar pagamento no gateway com este método
-              style={{ display: "flex", alignItems: "center", gap: 14, background: "#0D0D0D", border: "1px solid #1E1E1E", borderRadius: 14, padding: "16px", cursor: "pointer", fontFamily: "inherit", textAlign: "left", transition: "border-color 0.15s" }}>
-              <span style={{ fontSize: "1.6em", flexShrink: 0 }}>{m.emoji}</span>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: "0.98em", fontWeight: 700, color: "#E8E0D0" }}>{m.nome}</div>
-                <div style={{ fontSize: "0.8em", color: "#8A8070", marginTop: 2 }}>{m.sub}</div>
+        {/* Dados bancários */}
+        <div style={{ background: "#0D0D0D", border: "1px solid #1E1E1E", borderRadius: 14, padding: "16px", marginBottom: 18 }}>
+          {[
+            { label: "Empresa", valor: "JEZ CONSULTORIA SU LDA" },
+            { label: "IBAN", valor: "AO06 0040 0000 4299 0859 1013 3" },
+          ].map((d, i) => (
+            <div key={i} style={{ marginBottom: i < 1 ? 14 : 0 }}>
+              <div style={{ fontSize: "0.72em", color: "#8A8070", marginBottom: 3 }}>{d.label}</div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                <span style={{ fontSize: "0.92em", color: "#E8E0D0", fontWeight: 600, wordBreak: "break-all" }}>{d.valor}</span>
+                <button onClick={() => { try { navigator.clipboard.writeText(d.valor.replace(/\s/g, "")); } catch (e) {} }}
+                  style={{ flexShrink: 0, background: "transparent", border: "1px solid #2A2A2A", borderRadius: 8, padding: "4px 10px", color: "#F59E0B", fontSize: "0.72em", cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>
+                  Copiar
+                </button>
               </div>
-              <span style={{ color: "#8A8070", fontSize: "1.2em", flexShrink: 0 }}>›</span>
-            </button>
+            </div>
           ))}
         </div>
 
-        <div style={{ fontSize: "0.75em", color: "#6A6050", textAlign: "center", lineHeight: 1.5 }}>
-          🔒 Pagamento seguro via Multicaixa (EMIS). O acesso é ativado automaticamente após a confirmação.
+        <div style={{ fontSize: "0.78em", fontWeight: 700, letterSpacing: "0.08em", color: "#8A8070", marginBottom: 12 }}>
+          2. ENVIA O COMPROVATIVO
+        </div>
+
+        {/* Botão WhatsApp — abre já com mensagem escrita */}
+        <a href={linkWhats} target="_blank" rel="noopener noreferrer"
+          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, background: "#22C55E", borderRadius: 14, padding: "16px", textDecoration: "none", marginBottom: 14 }}>
+          <span style={{ fontSize: "1.3em" }}>💬</span>
+          <span style={{ color: "#052E16", fontWeight: 800, fontSize: "0.98em" }}>Enviar comprovativo por WhatsApp</span>
+        </a>
+
+        <div style={{ background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: 12, padding: "12px 14px", fontSize: "0.8em", color: "#A09880", lineHeight: 1.6, textAlign: "center" }}>
+          Depois de recebermos o teu comprovativo, ativamos o teu acesso. Costuma ser rápido. 🌅
         </div>
       </div>
     </div>
@@ -2922,6 +2967,193 @@ const INIT = {
   aberturas: 0,               // número de vezes que abriu a app (para o timing do lembrete)
 };
 
+// ── PAINEL DE ADMINISTRAÇÃO ────────────────────────────────────────────────────
+function AdminScreen({ onBack }) {
+  const [perfis, setPerfis] = useState([]);
+  const [aCarregar, setACarregar] = useState(true);
+  const [pesquisa, setPesquisa] = useState("");
+  const [filtro, setFiltro] = useState("todos"); // todos | trial | ativo | expirado
+  const [selecionado, setSelecionado] = useState(null);
+  const [plano, setPlano] = useState("mensal");
+  const [valor, setValor] = useState("");
+  const [dentroTrial, setDentroTrial] = useState(false);
+  const [confirmar, setConfirmar] = useState(false);
+  const [aProcessar, setAProcessar] = useState(false);
+  const [msg, setMsg] = useState(null); // {tipo:'ok'|'erro', texto}
+
+  const carregar = async () => {
+    setACarregar(true);
+    const lista = await listarPerfis();
+    setPerfis(lista);
+    setACarregar(false);
+  };
+  useEffect(() => { carregar(); }, []);
+
+  const hoje = new Date().toISOString().slice(0, 10);
+  const estadoReal = (p) => {
+    if (p.estado === "ativo" && p.acesso_ate && p.acesso_ate >= hoje) return "ativo";
+    if (p.estado === "ativo" && p.acesso_ate && p.acesso_ate < hoje) return "expirado";
+    return p.estado || "trial";
+  };
+
+  const filtrados = perfis.filter(p => {
+    const txt = pesquisa.trim().toLowerCase();
+    const bate = !txt ||
+      (p.nome || "").toLowerCase().includes(txt) ||
+      (p.email || "").toLowerCase().includes(txt) ||
+      (p.telefone || "").toLowerCase().includes(txt);
+    const est = estadoReal(p);
+    const passaFiltro = filtro === "todos" || est === filtro;
+    return bate && passaFiltro;
+  });
+
+  const abrirConfirmacao = () => {
+    setMsg(null);
+    if (!valor || parseInt(valor, 10) <= 0) { setMsg({ tipo: "erro", texto: "Indica o valor pago." }); return; }
+    setConfirmar(true);
+  };
+
+  const enviar = async () => {
+    setAProcessar(true); setMsg(null);
+    const r = await adminAtivarPagamento({
+      user_id: selecionado.id, plano, valor: parseInt(valor, 10), dentro_do_trial: dentroTrial,
+    });
+    setAProcessar(false); setConfirmar(false);
+    if (r.ok) {
+      setMsg({ tipo: "ok", texto: "Pagamento confirmado. Conta ativada." });
+      await carregar(); // recarregar para refletir o novo estado
+      const atualizado = (await listarPerfis()).find(p => p.id === selecionado.id);
+      if (atualizado) setSelecionado(atualizado);
+    } else {
+      setMsg({ tipo: "erro", texto: r.erro });
+    }
+  };
+
+  const corEstado = (e) => e === "ativo" ? "#22C55E" : e === "expirado" ? "#EF4444" : "#F59E0B";
+
+  // ── Detalhe de um utilizador ──
+  if (selecionado) {
+    const est = estadoReal(selecionado);
+    return (
+      <div style={S.screen}>
+        <div style={S.topBar}>
+          <button onClick={() => { setSelecionado(null); setMsg(null); setConfirmar(false); }} style={S.backBtn}>← Voltar</button>
+          <div style={{ fontWeight: 800, color: "#E8E0D0" }}>Utilizador</div>
+          <div style={{ width: 60 }} />
+        </div>
+        <div style={{ padding: "0 16px 40px" }}>
+          <div style={{ background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: 16, padding: 18, marginBottom: 16 }}>
+            <div style={{ fontSize: "1.1em", fontWeight: 800, color: "#E8E0D0", marginBottom: 4 }}>{selecionado.nome || "(sem nome)"}</div>
+            <div style={{ fontSize: "0.85em", color: "#8A8070" }}>{selecionado.email || selecionado.telefone || "—"}</div>
+            <div style={{ display: "inline-block", marginTop: 10, padding: "3px 10px", borderRadius: 20, background: corEstado(est) + "22", color: corEstado(est), fontSize: "0.78em", fontWeight: 700 }}>{est}</div>
+            <div style={{ marginTop: 14, fontSize: "0.82em", color: "#A09880", lineHeight: 1.8 }}>
+              <div>Plano: {selecionado.plano || "—"}</div>
+              <div>Início do trial: {selecionado.trial_inicio || "—"}</div>
+              <div>Acesso até: {selecionado.acesso_ate || "—"}</div>
+              <div style={{ fontSize: "0.9em", color: "#6A6050", marginTop: 4, wordBreak: "break-all" }}>ID: {selecionado.id}</div>
+            </div>
+          </div>
+
+          <div style={{ background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: 16, padding: 18 }}>
+            <div style={{ fontSize: "0.95em", fontWeight: 800, color: "#E8E0D0", marginBottom: 16 }}>Confirmar pagamento</div>
+
+            <label style={S.label}>PLANO</label>
+            <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+              {["mensal", "anual"].map(pl => (
+                <button key={pl} onClick={() => setPlano(pl)}
+                  style={{ flex: 1, padding: "12px", borderRadius: 12, background: plano === pl ? "#1A1400" : "transparent", border: `1px solid ${plano === pl ? "#F59E0B" : "#1E1E1E"}`, color: plano === pl ? "#F59E0B" : "#8A8070", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", textTransform: "capitalize" }}>
+                  {pl}
+                </button>
+              ))}
+            </div>
+
+            <label style={S.label}>VALOR PAGO (Kz)</label>
+            <input type="text" inputMode="numeric" value={valor}
+              onChange={e => setValor(e.target.value.replace(/\D/g, ""))}
+              placeholder="Ex: 1000" style={{ ...S.input, marginBottom: 16 }} />
+
+            <label style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18, cursor: "pointer" }}>
+              <input type="checkbox" checked={dentroTrial} onChange={e => setDentroTrial(e.target.checked)} style={{ width: 18, height: 18 }} />
+              <span style={{ fontSize: "0.88em", color: "#A09880" }}>Pagamento dentro do período de trial</span>
+            </label>
+
+            {msg && (
+              <div style={{ padding: "10px 12px", borderRadius: 10, marginBottom: 14, fontSize: "0.84em",
+                background: msg.tipo === "ok" ? "#22C55E22" : "#EF444422", color: msg.tipo === "ok" ? "#22C55E" : "#EF4444" }}>
+                {msg.texto}
+              </div>
+            )}
+
+            {est === "ativo" && !confirmar && (
+              <div style={{ fontSize: "0.8em", color: "#F59E0B", marginBottom: 12 }}>
+                ⚠️ Este utilizador já tem um plano ativo. Confirma antes de registar outro pagamento.
+              </div>
+            )}
+
+            {!confirmar ? (
+              <button onClick={abrirConfirmacao} style={S.btn}>Confirmar pagamento</button>
+            ) : (
+              <>
+                <div style={{ background: "#141414", borderRadius: 12, padding: 14, marginBottom: 12, fontSize: "0.85em", color: "#A09880", lineHeight: 1.7 }}>
+                  Vais registar: <b style={{ color: "#E8E0D0" }}>{plano}</b> · <b style={{ color: "#E8E0D0" }}>{parseInt(valor || 0, 10).toLocaleString("pt")} Kz</b> · {dentroTrial ? "dentro do trial" : "fora do trial"}
+                </div>
+                <button onClick={enviar} disabled={aProcessar} style={{ ...S.btn, opacity: aProcessar ? 0.6 : 1, marginBottom: 8 }}>
+                  {aProcessar ? "A processar…" : "Sim, confirmar"}
+                </button>
+                <button onClick={() => setConfirmar(false)} style={{ width: "100%", background: "transparent", border: "none", color: "#8A8070", fontSize: "0.85em", cursor: "pointer", fontFamily: "inherit" }}>Cancelar</button>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Lista de utilizadores ──
+  return (
+    <div style={S.screen}>
+      <div style={S.topBar}>
+        <button onClick={onBack} style={S.backBtn}>← Voltar</button>
+        <div style={{ fontWeight: 800, color: "#E8E0D0" }}>Administração</div>
+        <div style={{ width: 60 }} />
+      </div>
+      <div style={{ padding: "0 16px 40px" }}>
+        <input type="text" value={pesquisa} onChange={e => setPesquisa(e.target.value)}
+          placeholder="Pesquisar por nome, email ou telefone" style={{ ...S.input, marginBottom: 12 }} />
+
+        <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+          {["todos", "trial", "ativo", "expirado"].map(f => (
+            <button key={f} onClick={() => setFiltro(f)}
+              style={{ padding: "7px 14px", borderRadius: 20, background: filtro === f ? "#F59E0B" : "transparent", border: `1px solid ${filtro === f ? "#F59E0B" : "#2A2A2A"}`, color: filtro === f ? "#080808" : "#A09880", fontSize: "0.82em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", textTransform: "capitalize" }}>
+              {f}
+            </button>
+          ))}
+        </div>
+
+        {aCarregar ? (
+          <div style={{ textAlign: "center", color: "#8A8070", padding: 40 }}>A carregar utilizadores…</div>
+        ) : filtrados.length === 0 ? (
+          <div style={{ textAlign: "center", color: "#8A8070", padding: 40 }}>Nenhum utilizador encontrado.</div>
+        ) : (
+          filtrados.map(p => {
+            const est = estadoReal(p);
+            return (
+              <button key={p.id} onClick={() => { setSelecionado(p); setValor(""); setPlano("mensal"); setDentroTrial(false); setMsg(null); setConfirmar(false); }}
+                style={{ width: "100%", textAlign: "left", background: "#0D0D0D", border: "1px solid #161616", borderRadius: 14, padding: "14px 16px", marginBottom: 8, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div>
+                  <div style={{ color: "#E8E0D0", fontWeight: 700, fontSize: "0.92em" }}>{p.nome || "(sem nome)"}</div>
+                  <div style={{ color: "#8A8070", fontSize: "0.78em", marginTop: 2 }}>{p.email || p.telefone || "—"}</div>
+                </div>
+                <div style={{ padding: "3px 10px", borderRadius: 20, background: corEstado(est) + "22", color: corEstado(est), fontSize: "0.74em", fontWeight: 700 }}>{est}</div>
+              </button>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   // Lê o estado guardado no aparelho (memória entre sessões no mesmo dispositivo).
   // localStorage serve de CACHE offline; a fonte de verdade é o Supabase (perfis.dados).
@@ -2939,6 +3171,7 @@ export default function App() {
   const [aCarregar, setACarregar] = useState(true); // a verificar sessão ao arrancar
   const [bloqueado, setBloqueado] = useState(false); // ecrã de PIN a bloquear o acesso
   const [definirPin, setDefinirPin] = useState(false); // mostrar ecrã de criar PIN
+  const [isAdmin, setIsAdmin] = useState(false); // perfil.is_admin — mostra painel de admin
   const saveTimer = useRef(null);
   // SÓ permitir gravar em perfis.dados DEPOIS de o perfil ter sido carregado do Supabase.
   // Isto impede que o estado inicial vazio sobrescreva (apague) os dados já guardados.
@@ -2959,6 +3192,7 @@ export default function App() {
           setUserId(session.user.id);
           const perfil = await carregarPerfil(session.user.id);
           if (perfil && vivo) {
+            setIsAdmin(perfil.is_admin === true);
             const dados = perfil.dados && Object.keys(perfil.dados).length ? perfil.dados : null;
             if (dados) {
               setState(prev => ({ ...INIT, ...prev, ...dados, email: perfil.email || prev.email }));
@@ -3064,6 +3298,7 @@ export default function App() {
       } catch (e) {}
       // Carregar perfil (caso já exista de um login anterior)
       const perfil = await carregarPerfil(user.id);
+      if (perfil) setIsAdmin(perfil.is_admin === true);
       const dados = perfil?.dados && Object.keys(perfil.dados).length ? perfil.dados : null;
       if (dados) {
         setState(prev => ({ ...INIT, ...prev, ...dados, conta: true, email }));
@@ -3515,7 +3750,8 @@ export default function App() {
           <div style={{ height: "calc(90px + env(safe-area-inset-bottom, 0px))" }} />
         </>
       )}
-      {screen === "settings"   && <SettingsScreen state={state} onToggleNotif={handleToggleNotif} onBack={() => setScreen("dashboard")} onEditarDados={() => setScreen("editarDados")} onVerDespesas={() => setScreen("todasDespesas")} onVerEntradas={() => setScreen("todasEntradas")} onOpenConvite={() => setScreen("convite")} onVerEtiquetas={() => setScreen("etiquetas")} onOpenPlano={() => setMostrarPagarJa(true)} planoSub={trialExpired ? "O teu período gratuito terminou — subscreve" : `Período gratuito — ${trialDaysLeft} dias restantes`} onOpenAvaliacao={() => { setAvaliacaoManual(true); setMostrarAvaliacao(true); }} />}
+      {screen === "admin"      && <AdminScreen onBack={() => setScreen("settings")} />}
+      {screen === "settings"   && <SettingsScreen state={state} onToggleNotif={handleToggleNotif} onBack={() => setScreen("dashboard")} onEditarDados={() => setScreen("editarDados")} onVerDespesas={() => setScreen("todasDespesas")} onVerEntradas={() => setScreen("todasEntradas")} onOpenConvite={() => setScreen("convite")} onVerEtiquetas={() => setScreen("etiquetas")} onOpenPlano={() => setMostrarPagarJa(true)} planoSub={trialExpired ? "O teu período gratuito terminou — subscreve" : `Período gratuito — ${trialDaysLeft} dias restantes`} onOpenAvaliacao={() => { setAvaliacaoManual(true); setMostrarAvaliacao(true); }} isAdmin={isAdmin} onOpenAdmin={() => setScreen("admin")} />}
       {screen === "etiquetas"  && <EtiquetasScreen etiquetasCustom={state.etiquetasCustom || {}} onDelete={handleDeleteEtiqueta} onBack={() => setScreen("settings")} />}
       {screen === "editarDados" && <EditarDadosScreen state={state} onSave={handleSettingsSave} onBack={() => setScreen("settings")} />}
       {screen === "convite"     && <ConviteScreen inviteCode={state.inviteCode} inviteCount={state.inviteCount} diasAtivos={diasAtivos} onBack={() => setScreen("dashboard")} />}
