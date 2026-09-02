@@ -9,7 +9,10 @@ async function listarPerfis() {
   // NÃO lê a tabela perfis diretamente — isso violaria o RLS (cada user só vê o seu).
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) { console.error("listarPerfis: sem sessão"); return []; }
-  const { data, error } = await supabase.functions.invoke("admin-listar-utilizadores");
+  // Enviar o JWT da sessão explicitamente no header Authorization (a função exige verify_jwt).
+  const { data, error } = await supabase.functions.invoke("admin-listar-utilizadores", {
+    headers: { Authorization: `Bearer ${session.access_token}` },
+  });
   if (error) { console.error("admin-listar-utilizadores:", error.message || error); return []; }
   // A Edge Function devolve a lista; aceitar tanto array direto como { data: [...] }
   const lista = Array.isArray(data) ? data : (data?.data || data?.utilizadores || []);
