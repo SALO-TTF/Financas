@@ -5,12 +5,15 @@ import { supabase, normalizarTelefone } from "./lib/supabase";
 // A segurança está na Edge Function (verifica is_admin). Aqui só usamos a sessão
 // autenticada — NUNCA service_role. Não chamamos a RPC ativar_pagamento diretamente.
 async function listarPerfis() {
-  const { data, error } = await supabase
-    .from("perfis")
-    .select("id, nome, email, telefone, estado, plano, trial_inicio, acesso_ate")
-    .order("atualizado_em", { ascending: false });
-  if (error) { console.error("listarPerfis:", error.message); return []; }
-  return data || [];
+  // Listagem administrativa via Edge Function segura (verifica is_admin no backend).
+  // NÃO lê a tabela perfis diretamente — isso violaria o RLS (cada user só vê o seu).
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) { console.error("listarPerfis: sem sessão"); return []; }
+  const { data, error } = await supabase.functions.invoke("admin-listar-utilizadores");
+  if (error) { console.error("admin-listar-utilizadores:", error.message || error); return []; }
+  // A Edge Function devolve a lista; aceitar tanto array direto como { data: [...] }
+  const lista = Array.isArray(data) ? data : (data?.data || data?.utilizadores || []);
+  return lista;
 }
 
 async function adminAtivarPagamento({ user_id, plano, valor, dentro_do_trial }) {
