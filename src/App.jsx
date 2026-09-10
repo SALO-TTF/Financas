@@ -36,6 +36,62 @@ async function adminAtivarPagamento({ user_id, plano, valor, dentro_do_trial }) 
   return { ok: true, data };
 }
 
+// ── Fluxo de pagamentos PENDENTES (solicitação → aprovação/rejeição) ───────────
+// Cliente cria uma solicitação (não ativa nada). Admin aprova/rejeita via Edge Function.
+
+// Cliente: criar solicitação de pagamento (chama a RPC criar_solicitacao_pagamento).
+// NÃO ativa a conta — só regista um pedido com status 'pendente'.
+async function criarSolicitacaoPagamento({ plano, valor, dentroTrial }) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) return { ok: false, erro: "Sessão expirada. Entra de novo." };
+  const { data, error } = await supabase.rpc("criar_solicitacao_pagamento", {
+    p_plano: plano,
+    p_valor: valor,
+    p_dentro_trial: !!dentroTrial,
+  });
+  if (error) {
+    console.error("criar_solicitacao_pagamento:", error.message || error);
+    return { ok: false, erro: error.message || "Não foi possível enviar a solicitação." };
+  }
+  return { ok: true, data };
+}
+
+// Admin: listar pagamentos pendentes (Edge Function segura, verifica is_admin).
+async function listarPagamentosPendentes() {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) { console.error("listarPagamentosPendentes: sem sessão"); return []; }
+  const { data, error } = await supabase.functions.invoke("admin-listar-pagamentos-pendentes", {
+    headers: { Authorization: `Bearer ${session.access_token}` },
+    body: {},
+  });
+  if (error) { console.error("admin-listar-pagamentos-pendentes:", error.message || error); return []; }
+  return data?.pagamentos || (Array.isArray(data) ? data : []);
+}
+
+// Admin: aprovar uma solicitação (Edge Function → aprovar_solicitacao_pagamento no servidor).
+async function aprovarSolicitacao(pagamento_id) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) return { ok: false, erro: "Sessão expirada. Entra de novo." };
+  const { data, error } = await supabase.functions.invoke("admin-aprovar-solicitacao-pagamento", {
+    headers: { Authorization: `Bearer ${session.access_token}` },
+    body: { pagamento_id },
+  });
+  if (error) { console.error("admin-aprovar-solicitacao-pagamento:", error.message || error); return { ok: false, erro: error.message || "Falha ao aprovar." }; }
+  return { ok: true, data };
+}
+
+// Admin: rejeitar uma solicitação (Edge Function segura).
+async function rejeitarSolicitacao(pagamento_id) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) return { ok: false, erro: "Sessão expirada. Entra de novo." };
+  const { data, error } = await supabase.functions.invoke("admin-rejeitar-solicitacao-pagamento", {
+    headers: { Authorization: `Bearer ${session.access_token}` },
+    body: { pagamento_id },
+  });
+  if (error) { console.error("admin-rejeitar-solicitacao-pagamento:", error.message || error); return { ok: false, erro: error.message || "Falha ao rejeitar." }; }
+  return { ok: true, data };
+}
+
 
 // Camada fina sobre o Supabase. A lógica da app não muda; estas funções só ligam
 // o estado existente à base de dados. RLS garante que cada utilizador só toca no
@@ -107,6 +163,30 @@ const fmtKz = (n) => {
   // Add dots every 3 digits from right
   const intStr = String(intPart).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
   return sign + intStr + "," + decPart + " Kz";
+};
+
+// ── Entrada de dinheiro com decimais (padrão angolano: . milhares, , decimais) ──
+// Aceita o que a pessoa escreve (dígitos e uma vírgula), devolve:
+//  - valor: número real (ex: 250567.22) para os cálculos
+//  - display: texto formatado (ex: "250.567,22") para mostrar no input
+const parseValorInput = (raw) => {
+  // manter só dígitos e vírgulas; a primeira vírgula é o separador decimal
+  let s = String(raw).replace(/[^\d,]/g, "");
+  const partes = s.split(",");
+  const inteira = partes[0] || "";
+  const decimal = partes.length > 1 ? partes.slice(1).join("").slice(0, 2) : null; // máx 2 casas
+  // valor numérico
+  const numStr = decimal !== null ? `${inteira || "0"}.${decimal}` : (inteira || "");
+  const valor = numStr === "" ? 0 : parseFloat(numStr);
+  // display formatado
+  let display = "";
+  if (inteira !== "") {
+    const intFmt = String(parseInt(inteira, 10)).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+    display = decimal !== null ? `${intFmt},${decimal}` : intFmt;
+  } else if (decimal !== null) {
+    display = `0,${decimal}`;
+  }
+  return { valor, display };
 };
 
 const todayStr = () => new Date().toISOString().split("T")[0];
@@ -528,11 +608,9 @@ function SetupScreen({ onComplete }) {
   const [rendimentoVariavel, setRendimentoVariavel] = useState(false); // salário muda de mês para mês
 
   const handleSalarioChange = (raw) => {
-    const digits = raw.replace(/\D/g, "");
-    setSalario(digits);
-    if (digits === "") { setSalarioDisplay(""); return; }
-    const num = parseInt(digits, 10);
-    setSalarioDisplay(String(num).replace(/\B(?=(\d{3})+(?!\d))/g, "."));
+    const { valor, display } = parseValorInput(raw);
+    setSalario(valor ? String(valor) : "");
+    setSalarioDisplay(display);
   };
 
   const sal = parseFloat(salario) || 0;
@@ -1082,6 +1160,31 @@ function SettingsScreen({ state, onToggleNotif, onBack, onEditarDados, onVerDesp
         <div style={{ width: 60 }} />
       </div>
       <div style={{ padding: "0 16px" }}>
+        {/* Cartão de conta — nome + estado (gratuita ou paga) */}
+        {(() => {
+          const paga = state.estadoConta === "ativo" && state.acessoAte && state.acessoAte >= todayStr();
+          const nomePlano = state.planoAtivo === "anual" ? "Anual" : state.planoAtivo === "mensal" ? "Mensal" : "";
+          const fmtD = (iso) => { try { const [a,m,d]=iso.split("-"); return `${d}/${m}/${a}`; } catch(e){ return iso; } };
+          return (
+            <div style={{ background: "#0D0D0D", border: `1px solid ${paga ? "#22C55E" : "#1A1A1A"}`, borderRadius: 16, padding: "18px", marginBottom: 18, display: "flex", alignItems: "center", gap: 14 }}>
+              <div style={{ width: 46, height: 46, borderRadius: "50%", background: "#1A1400", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.4em", flexShrink: 0 }}>
+                {(state.nome || "?").charAt(0).toUpperCase()}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: "1em", fontWeight: 800, color: "#E8E0D0" }}>{state.nome || "A minha conta"}</div>
+                {paga ? (
+                  <div style={{ fontSize: "0.8em", color: "#22C55E", fontWeight: 600, marginTop: 2 }}>
+                    ✓ Conta ativa{nomePlano ? ` · ${nomePlano}` : ""}{state.acessoAte ? ` · até ${fmtD(state.acessoAte)}` : ""}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: "0.8em", color: "#F59E0B", fontWeight: 600, marginTop: 2 }}>
+                    Conta gratuita · período de teste
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
         {isAdmin && (
           <Opcao emoji="🛠️" titulo="Painel de administração" sub="Gerir utilizadores e confirmar pagamentos" onClick={onOpenAdmin} cor="#F59E0B" />
         )}
@@ -1130,9 +1233,9 @@ function EditarDadosScreen({ state, onSave, onBack }) {
   const [guardado, setGuardado] = useState(false);
 
   const handleSalario = (raw) => {
-    const digits = raw.replace(/\D/g, "");
-    setSalario(digits);
-    setSalarioDisplay(digits === "" ? "" : String(parseInt(digits,10)).replace(/\B(?=(\d{3})+(?!\d))/g, "."));
+    const { valor, display } = parseValorInput(raw);
+    setSalario(valor ? String(valor) : "");
+    setSalarioDisplay(display);
   };
 
   const handlePct = (id, raw) => {
@@ -1322,13 +1425,12 @@ function AddExpenseScreen({ onSave, onBack, despesasAnteriores, saldoRestante, e
             <span style={S.inputPrefix}>Kz</span>
             <input
               type="text"
-              inputMode="numeric"
+              inputMode="decimal"
               value={valorDisplay}
               onChange={e => {
-                const digits = e.target.value.replace(/\D/g, "");
-                setValor(digits);
-                if (digits === "") { setValorDisplay(""); return; }
-                setValorDisplay(String(parseInt(digits,10)).replace(/\B(?=(\d{3})+(?!\d))/g, "."));
+                const { valor: nv, display } = parseValorInput(e.target.value);
+                setValor(nv ? String(nv) : "");
+                setValorDisplay(display);
               }}
               placeholder="0"
               style={{ ...S.input, paddingLeft: 44 }}
@@ -1440,10 +1542,9 @@ function GoalsScreen({ state, onBack, onSaveGoal, onDeleteGoal, onAddToGoal, onU
   ];
 
   const handleNumInput = (raw, setSt, setDisp) => {
-    const digits = raw.replace(/\D/g, "");
-    setSt(digits);
-    if (!digits) { setDisp(""); return; }
-    setDisp(String(parseInt(digits,10)).replace(/\B(?=(\d{3})+(?!\d))/g, "."));
+    const { valor, display } = parseValorInput(raw);
+    setSt(valor ? String(valor) : "");
+    setDisp(display);
   };
 
   const totalGasto = despesas.reduce((s,d) => s + d.valor, 0);
@@ -2004,8 +2105,8 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo,
       <div style={S.setup}>
         <div style={S.setupCard}>
           {onFechar && (
-            <button onClick={onFechar}
-              style={{ position: "absolute", top: 16, right: 16, background: "transparent", border: "none", color: "#8A8070", fontSize: "1.3em", cursor: "pointer", fontFamily: "inherit", lineHeight: 1 }}>
+            <button onClick={onFechar} aria-label="Fechar"
+              style={{ position: "fixed", top: "calc(env(safe-area-inset-top, 0px) + 14px)", right: 16, zIndex: 50, width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", background: "#141414", border: "1px solid #2A2A2A", borderRadius: "50%", color: "#E8E0D0", fontSize: "1.1em", cursor: "pointer", fontFamily: "inherit", lineHeight: 1 }}>
               ✕
             </button>
           )}
@@ -2077,13 +2178,28 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo,
   }
 
   // ── PÁGINA 2 — PAGAMENTO MANUAL (transferência + comprovativo por WhatsApp) ──
-  // Fase de arranque: sem gateway. A pessoa transfere e envia o comprovativo por WhatsApp.
-  // O admin confirma no painel de administração, o que ativa o acesso.
+  // Cliente transfere, envia o comprovativo por WhatsApp e clica "Já enviei o comprovativo",
+  // o que cria uma SOLICITAÇÃO pendente (não ativa a conta). O admin aprova depois.
   const WHATSAPP = "244952272299";
+  const [aEnviar, setAEnviar] = useState(false);
+  const [msgSolicitacao, setMsgSolicitacao] = useState(null); // {tipo, texto}
   const msgWhats = encodeURIComponent(
     `Olá! Fiz o pagamento da Klaco (plano ${dados.nome} — ${dados.valor}). Segue o comprovativo.`
   );
   const linkWhats = `https://wa.me/${WHATSAPP}?text=${msgWhats}`;
+
+  const jaEnviei = async () => {
+    setAEnviar(true); setMsgSolicitacao(null);
+    const r = await onComprovativo(plano);
+    setAEnviar(false);
+    if (r && r.ok) {
+      setMsgSolicitacao({ tipo: "ok", texto: "Solicitação enviada. O teu pagamento será analisado e o acesso ativado após confirmação. 🌅" });
+    } else if (r && /pendente|já existe/i.test(r.erro || "")) {
+      setMsgSolicitacao({ tipo: "ok", texto: "Já tens uma solicitação pendente. Vamos analisá-la em breve." });
+    } else {
+      setMsgSolicitacao({ tipo: "erro", texto: (r && r.erro) || "Não foi possível enviar. Tenta de novo." });
+    }
+  };
 
   return (
     <div style={S.setup}>
@@ -2100,42 +2216,45 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo,
         </div>
 
         <div style={{ fontSize: "0.78em", fontWeight: 700, letterSpacing: "0.08em", color: "#8A8070", marginBottom: 12 }}>
-          1. TRANSFERE PARA ESTA CONTA
+          1. TRANSFERE PARA ESTE IBAN
         </div>
-
-        {/* Dados bancários */}
         <div style={{ background: "#0D0D0D", border: "1px solid #1E1E1E", borderRadius: 14, padding: "16px", marginBottom: 18 }}>
-          {[
-            { label: "Empresa", valor: "JEZ CONSULTORIA SU LDA" },
-            { label: "IBAN", valor: "AO06 0040 0000 4299 0859 1013 3" },
-          ].map((d, i) => (
-            <div key={i} style={{ marginBottom: i < 1 ? 14 : 0 }}>
-              <div style={{ fontSize: "0.72em", color: "#8A8070", marginBottom: 3 }}>{d.label}</div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                <span style={{ fontSize: "0.92em", color: "#E8E0D0", fontWeight: 600, wordBreak: "break-all" }}>{d.valor}</span>
-                <button onClick={() => { try { navigator.clipboard.writeText(d.valor.replace(/\s/g, "")); } catch (e) {} }}
-                  style={{ flexShrink: 0, background: "transparent", border: "1px solid #2A2A2A", borderRadius: 8, padding: "4px 10px", color: "#F59E0B", fontSize: "0.72em", cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>
-                  Copiar
-                </button>
-              </div>
-            </div>
-          ))}
+          <div style={{ fontSize: "0.72em", color: "#8A8070", marginBottom: 3 }}>Empresa</div>
+          <div style={{ fontSize: "0.92em", color: "#E8E0D0", fontWeight: 600, marginBottom: 14 }}>JEZ CONSULTORIA SU LDA</div>
+          <div style={{ fontSize: "0.72em", color: "#8A8070", marginBottom: 3 }}>IBAN</div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+            <span style={{ fontSize: "0.92em", color: "#E8E0D0", fontWeight: 600, wordBreak: "break-all" }}>AO06 0040 0000 4299 0859 1013 3</span>
+            <button onClick={() => { try { navigator.clipboard.writeText("AO06004000004299085910133"); } catch (e) {} }}
+              style={{ flexShrink: 0, background: "transparent", border: "1px solid #2A2A2A", borderRadius: 8, padding: "4px 10px", color: "#F59E0B", fontSize: "0.72em", cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>
+              Copiar
+            </button>
+          </div>
         </div>
 
         <div style={{ fontSize: "0.78em", fontWeight: 700, letterSpacing: "0.08em", color: "#8A8070", marginBottom: 12 }}>
           2. ENVIA O COMPROVATIVO
         </div>
-
-        {/* Botão WhatsApp — abre já com mensagem escrita */}
         <a href={linkWhats} target="_blank" rel="noopener noreferrer"
-          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, background: "#22C55E", borderRadius: 14, padding: "16px", textDecoration: "none", marginBottom: 14 }}>
+          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, background: "#22C55E", borderRadius: 14, padding: "16px", textDecoration: "none", marginBottom: 16 }}>
           <span style={{ fontSize: "1.3em" }}>💬</span>
           <span style={{ color: "#052E16", fontWeight: 800, fontSize: "0.98em" }}>Enviar comprovativo por WhatsApp</span>
         </a>
 
-        <div style={{ background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: 12, padding: "12px 14px", fontSize: "0.8em", color: "#A09880", lineHeight: 1.6, textAlign: "center" }}>
-          Depois de recebermos o teu comprovativo, ativamos o teu acesso. Costuma ser rápido. 🌅
+        <div style={{ fontSize: "0.78em", fontWeight: 700, letterSpacing: "0.08em", color: "#8A8070", marginBottom: 12 }}>
+          3. CONFIRMA
         </div>
+        {msgSolicitacao && (
+          <div style={{ padding: "12px 14px", borderRadius: 10, marginBottom: 12, fontSize: "0.84em", lineHeight: 1.5,
+            background: msgSolicitacao.tipo === "ok" ? "#22C55E22" : "#EF444422", color: msgSolicitacao.tipo === "ok" ? "#22C55E" : "#EF4444" }}>
+            {msgSolicitacao.texto}
+          </div>
+        )}
+        {!(msgSolicitacao && msgSolicitacao.tipo === "ok") && (
+          <button onClick={jaEnviei} disabled={aEnviar}
+            style={{ ...S.btn, opacity: aEnviar ? 0.6 : 1 }}>
+            {aEnviar ? "A enviar…" : "Já enviei o comprovativo"}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -2473,9 +2592,9 @@ function AddEntradaScreen({ onSave, onBack }) {
   const [data, setData] = useState(todayStr());
 
   const handleValor = (raw) => {
-    const digits = raw.replace(/\D/g, "");
-    setValor(digits);
-    setValorDisplay(digits === "" ? "" : String(parseInt(digits,10)).replace(/\B(?=(\d{3})+(?!\d))/g, "."));
+    const { valor: nv, display } = parseValorInput(raw);
+    setValor(nv ? String(nv) : "");
+    setValorDisplay(display);
   };
 
   const atalhos = ["13º mês", "Bónus", "Subsídio de férias", "Subsídio de Natal", "Trabalho extra"];
@@ -2543,11 +2662,11 @@ function EditMovimentoModal({ tipo, item, onSave, onDelete, onClose }) {
   );
   const [data, setData] = useState(item.data || todayStr());
   const handleValor = (raw) => {
-    const digits = raw.replace(/\D/g, "");
-    setValor(digits);
-    setValorDisplay(digits === "" ? "" : String(parseInt(digits,10)).replace(/\B(?=(\d{3})+(?!\d))/g, "."));
+    const { valor: nv, display } = parseValorInput(raw);
+    setValor(nv ? String(nv) : "");
+    setValorDisplay(display);
   };
-  const v = parseFloat(String(valor).replace(/\D/g, "")) || 0;
+  const v = parseFloat(String(valor)) || 0;
   const valido = nome.trim().length > 0 && v > 0;
 
   return (
@@ -2640,23 +2759,52 @@ function AllDespesasScreen({ despesas, onEdit, onDelete, onBack }) {
         {despesas.length === 0 ? (
           <div style={{ textAlign: "center", color: "#6A6050", fontSize: "0.9em", padding: "40px 0" }}>Ainda não registaste despesas.</div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {[...despesas].reverse().map(d => {
-              const cat = CATS.find(c => c.id === d.categoria);
+          (() => {
+            // Agrupar por data (mais recente primeiro)
+            const grupos = {};
+            [...despesas].forEach(d => { (grupos[d.data] = grupos[d.data] || []).push(d); });
+            const datas = Object.keys(grupos).sort((a, b) => b.localeCompare(a));
+            const fmtData = (iso) => {
+              try {
+                const hoje = todayStr();
+                const ontem = (() => { const x = new Date(); x.setDate(x.getDate() - 1); return x.toISOString().split("T")[0]; })();
+                if (iso === hoje) return "Hoje";
+                if (iso === ontem) return "Ontem";
+                const [a, m, dia] = iso.split("-");
+                const meses = ["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
+                return `${parseInt(dia,10)} ${meses[parseInt(m,10)-1]} ${a}`;
+              } catch (e) { return iso; }
+            };
+            return datas.map(dataIso => {
+              const itens = grupos[dataIso];
+              const totalDia = itens.reduce((s, d) => s + d.valor, 0);
               return (
-                <button key={d.id} onClick={() => setEditing(d)}
-                  style={{ ...S.expenseRow, cursor: "pointer", textAlign: "left", width: "100%", fontFamily: "inherit" }}>
-                  <span style={S.expEmoji}>{cat?.emoji}</span>
-                  <div style={{ flex: 1 }}>
-                    <div style={S.expDesc}>{d.descricao}</div>
-                    <div style={S.expDate}>{d.data} · {cat?.label}</div>
+                <div key={dataIso} style={{ marginBottom: 20 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, paddingBottom: 6, borderBottom: "1px solid #1A1A1A" }}>
+                    <span style={{ fontSize: "0.8em", fontWeight: 700, color: "#C8C0B0", textTransform: "capitalize" }}>{fmtData(dataIso)}</span>
+                    <span style={{ fontSize: "0.78em", color: "#8A8070" }}>{fmtKz(totalDia)}</span>
                   </div>
-                  <div style={{ color: "#EF4444", fontWeight: 600 }}>-{fmtKz(d.valor)}</div>
-                  <span style={{ color: "#6A6050", marginLeft: 8, fontSize: "0.9em" }}>✎</span>
-                </button>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {itens.map(d => {
+                      const cat = CATS.find(c => c.id === d.categoria);
+                      return (
+                        <button key={d.id} onClick={() => setEditing(d)}
+                          style={{ ...S.expenseRow, cursor: "pointer", textAlign: "left", width: "100%", fontFamily: "inherit" }}>
+                          <span style={S.expEmoji}>{cat?.emoji}</span>
+                          <div style={{ flex: 1 }}>
+                            <div style={S.expDesc}>{d.descricao}</div>
+                            <div style={S.expDate}>{cat?.label}</div>
+                          </div>
+                          <div style={{ color: "#EF4444", fontWeight: 600 }}>-{fmtKz(d.valor)}</div>
+                          <span style={{ color: "#6A6050", marginLeft: 8, fontSize: "0.9em" }}>✎</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               );
-            })}
-          </div>
+            });
+          })()
         )}
       </div>
       {editing && (
@@ -2689,20 +2837,44 @@ function AllEntradasScreen({ entradas, onEdit, onDelete, onBack, onAdd }) {
         {entradas.length === 0 ? (
           <div style={{ textAlign: "center", color: "#6A6050", fontSize: "0.9em", padding: "40px 0" }}>Ainda não tens entradas extra.</div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16 }}>
-            {[...entradas].reverse().map(e => (
-              <button key={e.id || e.nome} onClick={() => setEditing(e)}
-                style={{ ...S.expenseRow, cursor: "pointer", textAlign: "left", width: "100%", fontFamily: "inherit" }}>
-                <span style={S.expEmoji}>💰</span>
-                <div style={{ flex: 1 }}>
-                  <div style={S.expDesc}>{e.nome}</div>
-                  <div style={S.expDate}>{e.data}</div>
-                </div>
-                <div style={{ color: "#22C55E", fontWeight: 600 }}>+{fmtKz(e.valor)}</div>
-                <span style={{ color: "#6A6050", marginLeft: 8, fontSize: "0.9em" }}>✎</span>
-              </button>
-            ))}
-          </div>
+          (() => {
+            const grupos = {};
+            [...entradas].forEach(e => { const k = e.data || "—"; (grupos[k] = grupos[k] || []).push(e); });
+            const datas = Object.keys(grupos).sort((a, b) => b.localeCompare(a));
+            const fmtData = (iso) => {
+              try {
+                const hoje = todayStr();
+                const ontem = (() => { const x = new Date(); x.setDate(x.getDate() - 1); return x.toISOString().split("T")[0]; })();
+                if (iso === hoje) return "Hoje";
+                if (iso === ontem) return "Ontem";
+                const [a, m, dia] = iso.split("-");
+                const meses = ["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
+                return `${parseInt(dia,10)} ${meses[parseInt(m,10)-1]} ${a}`;
+              } catch (e) { return iso; }
+            };
+            return (
+              <div style={{ marginBottom: 16 }}>
+                {datas.map(dataIso => (
+                  <div key={dataIso} style={{ marginBottom: 20 }}>
+                    <div style={{ fontSize: "0.8em", fontWeight: 700, color: "#C8C0B0", marginBottom: 8, paddingBottom: 6, borderBottom: "1px solid #1A1A1A", textTransform: "capitalize" }}>{fmtData(dataIso)}</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {grupos[dataIso].map(e => (
+                        <button key={e.id || e.nome} onClick={() => setEditing(e)}
+                          style={{ ...S.expenseRow, cursor: "pointer", textAlign: "left", width: "100%", fontFamily: "inherit" }}>
+                          <span style={S.expEmoji}>💰</span>
+                          <div style={{ flex: 1 }}>
+                            <div style={S.expDesc}>{e.nome}</div>
+                          </div>
+                          <div style={{ color: "#22C55E", fontWeight: 600 }}>+{fmtKz(e.valor)}</div>
+                          <span style={{ color: "#6A6050", marginLeft: 8, fontSize: "0.9em" }}>✎</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()
         )}
         <button onClick={onAdd} style={{ ...S.btn }}>+ Adicionar entrada</button>
       </div>
@@ -2719,14 +2891,36 @@ function AllEntradasScreen({ entradas, onEdit, onDelete, onBack, onAdd }) {
 // ── APP ROOT ──────────────────────────────────────────────────────────────────
 const TRIAL_DAYS = 14;
 
+// Modal "Parabéns, tens acesso" — aparece quando o pagamento é confirmado
+function ParabensPagamentoModal({ plano, acessoAte, onFechar }) {
+  const nomePlano = plano === "anual" ? "1 ano inteiro" : plano === "mensal" ? "1 mês" : "o teu plano";
+  const fmtD = (iso) => { try { const [a,m,d]=iso.split("-"); return `${d}/${m}/${a}`; } catch(e){ return iso; } };
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: 24, animation: "slideUp 0.25s ease" }}>
+      <div style={{ width: "100%", maxWidth: 380, background: "#0D0D0D", border: "1px solid #22C55E", borderRadius: 24, padding: "32px 24px", textAlign: "center" }}>
+        <div style={{ fontSize: "3em", marginBottom: 12 }}>🎉</div>
+        <div style={{ fontSize: "1.3em", fontWeight: 800, color: "#E8E0D0", marginBottom: 10 }}>Parabéns!</div>
+        <p style={{ color: "#A09880", fontSize: "0.95em", lineHeight: 1.6, marginBottom: 8 }}>
+          O teu pagamento foi confirmado. Agora tens acesso à Klaco por <b style={{ color: "#22C55E" }}>{nomePlano}</b>.
+        </p>
+        {acessoAte && (
+          <p style={{ color: "#8A8070", fontSize: "0.82em", marginBottom: 24 }}>Válido até {fmtD(acessoAte)} 🌅</p>
+        )}
+        <button onClick={onFechar} style={S.btn}>Continuar</button>
+      </div>
+    </div>
+  );
+}
+
+
 // ── CONSENTIMENTO DE NOTIFICAÇÕES (aparece uma vez, após o 1º número) ─────────
 function ConfirmarSalarioModal({ salarioAnterior, onConfirmar }) {
   const [valor, setValor] = useState(String(salarioAnterior || ""));
   const [display, setDisplay] = useState(salarioAnterior ? String(salarioAnterior).replace(/\B(?=(\d{3})+(?!\d))/g, ".") : "");
   const handleInput = (raw) => {
-    const digits = raw.replace(/\D/g, "");
-    setValor(digits);
-    setDisplay(digits === "" ? "" : String(parseInt(digits, 10)).replace(/\B(?=(\d{3})+(?!\d))/g, "."));
+    const { valor: nv, display: disp } = parseValorInput(raw);
+    setValor(nv ? String(nv) : "");
+    setDisplay(disp);
   };
   return (
     <div style={S.modalOverlay}>
@@ -2969,6 +3163,10 @@ const INIT = {
   appInstalada: false,        // a pessoa já instalou a app (PWA)?
   pin: null,                  // PIN de 4 dígitos (proteção local do acesso)
   biometriaAtiva: false,      // a pessoa ativou entrar por biometria?
+  estadoConta: "trial",       // estado no servidor: trial | ativo | expirado
+  acessoAte: null,            // data até quando o acesso pago é válido
+  planoAtivo: null,           // mensal | anual (quando pago)
+  parabensPagamentoVisto: false, // já mostrou o "Parabéns, tens acesso"?
   instalarPedidos: 0,         // quantas vezes já mostrámos o convite para instalar
   aberturas: 0,               // número de vezes que abriu a app (para o timing do lembrete)
 };
@@ -2986,14 +3184,33 @@ function AdminScreen({ onBack }) {
   const [confirmar, setConfirmar] = useState(false);
   const [aProcessar, setAProcessar] = useState(false);
   const [msg, setMsg] = useState(null); // {tipo:'ok'|'erro', texto}
+  const [pendentes, setPendentes] = useState([]);
+  const [aProcessarPag, setAProcessarPag] = useState(null); // id em processamento
 
   const carregar = async () => {
     setACarregar(true);
-    const lista = await listarPerfis();
+    const [lista, pend] = await Promise.all([listarPerfis(), listarPagamentosPendentes()]);
     setPerfis(lista);
+    setPendentes(pend);
     setACarregar(false);
   };
   useEffect(() => { carregar(); }, []);
+
+  const aprovar = async (pag) => {
+    setAProcessarPag(pag.id); setMsg(null);
+    const r = await aprovarSolicitacao(pag.id);
+    setAProcessarPag(null);
+    if (r.ok) { setMsg({ tipo: "ok", texto: "Pagamento aprovado e acesso ativado." }); setPendentes(prev => prev.filter(p => p.id !== pag.id)); carregar(); }
+    else setMsg({ tipo: "erro", texto: r.erro });
+  };
+  const rejeitar = async (pag) => {
+    if (!window.confirm("Tem certeza que deseja rejeitar esta solicitação?")) return;
+    setAProcessarPag(pag.id); setMsg(null);
+    const r = await rejeitarSolicitacao(pag.id);
+    setAProcessarPag(null);
+    if (r.ok) { setMsg({ tipo: "ok", texto: "Solicitação rejeitada." }); setPendentes(prev => prev.filter(p => p.id !== pag.id)); }
+    else setMsg({ tipo: "erro", texto: r.erro });
+  };
 
   const hoje = new Date().toISOString().slice(0, 10);
   const estadoReal = (p) => {
@@ -3124,6 +3341,46 @@ function AdminScreen({ onBack }) {
         <div style={{ width: 60 }} />
       </div>
       <div style={{ padding: "0 16px 40px" }}>
+        {msg && (
+          <div style={{ padding: "10px 12px", borderRadius: 10, marginBottom: 12, fontSize: "0.84em",
+            background: msg.tipo === "ok" ? "#22C55E22" : "#EF444422", color: msg.tipo === "ok" ? "#22C55E" : "#EF4444" }}>
+            {msg.texto}
+          </div>
+        )}
+
+        {/* PAGAMENTOS PENDENTES */}
+        {pendentes.length > 0 && (
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ fontSize: "0.78em", fontWeight: 800, letterSpacing: "0.08em", color: "#F59E0B", marginBottom: 10 }}>
+              PAGAMENTOS PENDENTES ({pendentes.length})
+            </div>
+            {pendentes.map(pag => {
+              const fmtD = (iso) => { try { const d = new Date(iso); return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()}`; } catch(e){ return iso || "—"; } };
+              return (
+                <div key={pag.id} style={{ background: "#0D0D0D", border: "1px solid #F59E0B44", borderRadius: 14, padding: 16, marginBottom: 10 }}>
+                  <div style={{ fontSize: "0.9em", color: "#E8E0D0", fontWeight: 700 }}>{pag.nome || pag.perfil_nome || "(sem nome)"}</div>
+                  <div style={{ fontSize: "0.78em", color: "#8A8070", marginTop: 2 }}>{pag.email || pag.telefone || pag.user_id}</div>
+                  <div style={{ fontSize: "0.82em", color: "#A09880", marginTop: 8, lineHeight: 1.7 }}>
+                    Plano: <b style={{ color: "#E8E0D0", textTransform: "capitalize" }}>{pag.plano}</b><br/>
+                    Valor: <b style={{ color: "#E8E0D0" }}>{Number(pag.valor).toLocaleString("pt")} Kz</b><br/>
+                    Solicitado em: {fmtD(pag.criado_em)}
+                  </div>
+                  <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                    <button onClick={() => aprovar(pag)} disabled={aProcessarPag === pag.id}
+                      style={{ flex: 1, background: "#22C55E", border: "none", borderRadius: 10, padding: "11px", color: "#052E16", fontWeight: 800, fontSize: "0.85em", cursor: "pointer", fontFamily: "inherit", opacity: aProcessarPag === pag.id ? 0.6 : 1 }}>
+                      {aProcessarPag === pag.id ? "…" : "Aprovar"}
+                    </button>
+                    <button onClick={() => rejeitar(pag)} disabled={aProcessarPag === pag.id}
+                      style={{ flex: 1, background: "transparent", border: "1px solid #EF444466", borderRadius: 10, padding: "11px", color: "#EF4444", fontWeight: 700, fontSize: "0.85em", cursor: "pointer", fontFamily: "inherit" }}>
+                      Rejeitar
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         <input type="text" value={pesquisa} onChange={e => setPesquisa(e.target.value)}
           placeholder="Pesquisar por nome, email ou telefone" style={{ ...S.input, marginBottom: 12 }} />
 
@@ -3199,13 +3456,16 @@ export default function App() {
           const perfil = await carregarPerfil(session.user.id);
           if (perfil && vivo) {
             setIsAdmin(perfil.is_admin === true);
+            // Estado da conta (do servidor) — para mostrar Free/Paga e o "Parabéns"
+            const contaInfo = { estadoConta: perfil.estado || "trial", acessoAte: perfil.acesso_ate || null, planoAtivo: perfil.plano || null };
             const dados = perfil.dados && Object.keys(perfil.dados).length ? perfil.dados : null;
             if (dados) {
-              setState(prev => ({ ...INIT, ...prev, ...dados, email: perfil.email || prev.email }));
+              setState(prev => ({ ...INIT, ...prev, ...dados, ...contaInfo, email: perfil.email || prev.email }));
               // Se já tem PIN definido e setup feito, bloqueia até introduzir o código
               if (dados.pin && dados.setup) { setBloqueado(true); setScreen("dashboard"); }
               else setScreen(dados.setup ? "dashboard" : "setup");
             } else {
+              setState(prev => ({ ...prev, ...contaInfo }));
               // Sem dados no servidor ainda: mantém o que houver em cache local, vai ao setup
               setScreen("setup");
             }
@@ -3269,19 +3529,27 @@ export default function App() {
   //       (marcar a conta como estado='ativo' permanente), em vez de estar no código.
   const CONTAS_LIVRES = ["jezreelalfredo@hotmail.com"];
   const contaLivre = state.email && CONTAS_LIVRES.includes(String(state.email).trim().toLowerCase());
-  const trialExpired = state.setup && trialDaysUsed >= TRIAL_DAYS && !contaLivre;
+  // Conta paga (estado ativo no servidor e acesso ainda válido) nunca está "expirada".
+  const contaPaga = state.estadoConta === "ativo" && state.acessoAte && state.acessoAte >= todayStr();
+  const trialExpired = state.setup && trialDaysUsed >= TRIAL_DAYS && !contaLivre && !contaPaga;
 
   const handleDispensarDica = () => {
     setState(prev => ({ ...prev, dicaRegistoMostrada: true }));
   };
 
-  const handleComprovativoEnviado = (plano) => {
-    // plano === null significa "ainda não paguei / mudar de plano" — volta ao ecrã de pagamento
+  const handleComprovativoEnviado = async (plano) => {
+    // plano === null significa "mudar de plano" — volta ao ecrã de pagamento
     if (plano === null) {
       setState(prev => ({ ...prev, comprovativoEnviado: false }));
-      return;
+      return { ok: true };
     }
-    setState(prev => ({ ...prev, comprovativoEnviado: true, planoEscolhido: plano }));
+    // Criar a solicitação de pagamento (status 'pendente' no servidor). NÃO ativa a conta.
+    const valorNum = plano === "anual" ? (trialDaysUsed < TRIAL_DAYS ? 6000 : 12000) : 1000;
+    const r = await criarSolicitacaoPagamento({ plano, valor: valorNum, dentroTrial: trialDaysUsed < TRIAL_DAYS });
+    if (r.ok) {
+      setState(prev => ({ ...prev, comprovativoEnviado: true, planoEscolhido: plano }));
+    }
+    return r;
   };
 
   const handleToggleNotif = (chave) => {
@@ -3479,6 +3747,15 @@ export default function App() {
   const [deferredPrompt, setDeferredPrompt] = useState(null);   // evento de instalar (Android)
   const [mostrarInstalar, setMostrarInstalar] = useState(false); // modal de instalar visível agora
   const [mostrarPagarJa, setMostrarPagarJa] = useState(false);   // ecrã de pagamento antecipado (durante teste)
+  const [mostrarParabens, setMostrarParabens] = useState(false); // "Parabéns, tens acesso" após ativação
+
+  // Deteta quando a conta passou a ativa (pagamento confirmado) e ainda não celebrou
+  useEffect(() => {
+    const paga = state.estadoConta === "ativo" && state.acessoAte && state.acessoAte >= todayStr();
+    if (paga && !state.parabensPagamentoVisto && state.setup) {
+      setMostrarParabens(true);
+    }
+  }, [state.estadoConta, state.acessoAte, state.parabensPagamentoVisto, state.setup]);
   const [mostrarAvaliacao, setMostrarAvaliacao] = useState(false); // modal de avaliação (estrelas)
   const [avaliacaoManual, setAvaliacaoManual] = useState(false);   // aberta pelas Definições (pode fechar sempre)
 
@@ -3804,6 +4081,15 @@ export default function App() {
           onEnviar={handleEnviarAvaliacao}
           onFechar={handleFecharAvaliacao}
           avaliacaoAnterior={state.ultimaAvaliacao}
+        />
+      )}
+
+      {/* Parabéns — pagamento confirmado */}
+      {mostrarParabens && (
+        <ParabensPagamentoModal
+          plano={state.planoAtivo}
+          acessoAte={state.acessoAte}
+          onFechar={() => { setMostrarParabens(false); setState(prev => ({ ...prev, parabensPagamentoVisto: true })); }}
         />
       )}
 
