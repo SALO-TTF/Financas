@@ -3178,38 +3178,62 @@ function AdminScreen({ onBack }) {
   const [pesquisa, setPesquisa] = useState("");
   const [filtro, setFiltro] = useState("todos"); // todos | trial | ativo | expirado
   const [selecionado, setSelecionado] = useState(null);
-  const [plano, setPlano] = useState("mensal");
-  const [valor, setValor] = useState("");
-  const [dentroTrial, setDentroTrial] = useState(false);
-  const [confirmar, setConfirmar] = useState(false);
-  const [aProcessar, setAProcessar] = useState(false);
   const [msg, setMsg] = useState(null); // {tipo:'ok'|'erro', texto}
   const [pendentes, setPendentes] = useState([]);
   const [aProcessarPag, setAProcessarPag] = useState(null); // id em processamento
 
   const carregar = async () => {
     setACarregar(true);
-    const [lista, pend] = await Promise.all([listarPerfis(), listarPagamentosPendentes()]);
-    setPerfis(lista);
-    setPendentes(pend);
-    setACarregar(false);
+    try {
+      const [lista, pend] = await Promise.all([listarPerfis(), listarPagamentosPendentes()]);
+      setPerfis(lista);
+      setPendentes(pend);
+    } catch (e) {
+      console.error("admin carregar:", e);
+      setMsg({ tipo: "erro", texto: "Não foi possível carregar os dados. Tenta novamente." });
+    } finally {
+      setACarregar(false);
+    }
   };
   useEffect(() => { carregar(); }, []);
 
   const aprovar = async (pag) => {
+    if (aProcessarPag) return; // impede cliques duplicados
     setAProcessarPag(pag.id); setMsg(null);
-    const r = await aprovarSolicitacao(pag.id);
-    setAProcessarPag(null);
-    if (r.ok) { setMsg({ tipo: "ok", texto: "Pagamento aprovado e acesso ativado." }); setPendentes(prev => prev.filter(p => p.id !== pag.id)); carregar(); }
-    else setMsg({ tipo: "erro", texto: r.erro });
+    try {
+      const r = await aprovarSolicitacao(pag.id);
+      if (r && r.ok) {
+        setMsg({ tipo: "ok", texto: "Pagamento aprovado e acesso ativado." });
+        setPendentes(prev => prev.filter(p => p.id !== pag.id));
+        carregar();
+      } else {
+        setMsg({ tipo: "erro", texto: (r && r.erro) || "Não foi possível concluir a operação. Tenta novamente." });
+      }
+    } catch (e) {
+      console.error("aprovar:", e);
+      setMsg({ tipo: "erro", texto: "Não foi possível concluir a operação. Tenta novamente." });
+    } finally {
+      setAProcessarPag(null);
+    }
   };
   const rejeitar = async (pag) => {
+    if (aProcessarPag) return;
     if (!window.confirm("Tem certeza que deseja rejeitar esta solicitação?")) return;
     setAProcessarPag(pag.id); setMsg(null);
-    const r = await rejeitarSolicitacao(pag.id);
-    setAProcessarPag(null);
-    if (r.ok) { setMsg({ tipo: "ok", texto: "Solicitação rejeitada." }); setPendentes(prev => prev.filter(p => p.id !== pag.id)); }
-    else setMsg({ tipo: "erro", texto: r.erro });
+    try {
+      const r = await rejeitarSolicitacao(pag.id);
+      if (r && r.ok) {
+        setMsg({ tipo: "ok", texto: "Solicitação rejeitada." });
+        setPendentes(prev => prev.filter(p => p.id !== pag.id));
+      } else {
+        setMsg({ tipo: "erro", texto: (r && r.erro) || "Não foi possível concluir a operação. Tenta novamente." });
+      }
+    } catch (e) {
+      console.error("rejeitar:", e);
+      setMsg({ tipo: "erro", texto: "Não foi possível concluir a operação. Tenta novamente." });
+    } finally {
+      setAProcessarPag(null);
+    }
   };
 
   const hoje = new Date().toISOString().slice(0, 10);
@@ -3230,28 +3254,6 @@ function AdminScreen({ onBack }) {
     return bate && passaFiltro;
   });
 
-  const abrirConfirmacao = () => {
-    setMsg(null);
-    if (!valor || parseInt(valor, 10) <= 0) { setMsg({ tipo: "erro", texto: "Indica o valor pago." }); return; }
-    setConfirmar(true);
-  };
-
-  const enviar = async () => {
-    setAProcessar(true); setMsg(null);
-    const r = await adminAtivarPagamento({
-      user_id: selecionado.id, plano, valor: parseInt(valor, 10), dentro_do_trial: dentroTrial,
-    });
-    setAProcessar(false); setConfirmar(false);
-    if (r.ok) {
-      setMsg({ tipo: "ok", texto: "Pagamento confirmado. Conta ativada." });
-      await carregar(); // recarregar para refletir o novo estado
-      const atualizado = (await listarPerfis()).find(p => p.id === selecionado.id);
-      if (atualizado) setSelecionado(atualizado);
-    } else {
-      setMsg({ tipo: "erro", texto: r.erro });
-    }
-  };
-
   const corEstado = (e) => e === "ativo" ? "#22C55E" : e === "expirado" ? "#EF4444" : "#F59E0B";
 
   // ── Detalhe de um utilizador ──
@@ -3260,7 +3262,7 @@ function AdminScreen({ onBack }) {
     return (
       <div style={S.screen}>
         <div style={S.topBar}>
-          <button onClick={() => { setSelecionado(null); setMsg(null); setConfirmar(false); }} style={S.backBtn}>← Voltar</button>
+          <button onClick={() => { setSelecionado(null); setMsg(null); }} style={S.backBtn}>← Voltar</button>
           <div style={{ fontWeight: 800, color: "#E8E0D0" }}>Utilizador</div>
           <div style={{ width: 60 }} />
         </div>
@@ -3277,55 +3279,8 @@ function AdminScreen({ onBack }) {
             </div>
           </div>
 
-          <div style={{ background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: 16, padding: 18 }}>
-            <div style={{ fontSize: "0.95em", fontWeight: 800, color: "#E8E0D0", marginBottom: 16 }}>Confirmar pagamento</div>
-
-            <label style={S.label}>PLANO</label>
-            <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-              {["mensal", "anual"].map(pl => (
-                <button key={pl} onClick={() => setPlano(pl)}
-                  style={{ flex: 1, padding: "12px", borderRadius: 12, background: plano === pl ? "#1A1400" : "transparent", border: `1px solid ${plano === pl ? "#F59E0B" : "#1E1E1E"}`, color: plano === pl ? "#F59E0B" : "#8A8070", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", textTransform: "capitalize" }}>
-                  {pl}
-                </button>
-              ))}
-            </div>
-
-            <label style={S.label}>VALOR PAGO (Kz)</label>
-            <input type="text" inputMode="numeric" value={valor}
-              onChange={e => setValor(e.target.value.replace(/\D/g, ""))}
-              placeholder="Ex: 1000" style={{ ...S.input, marginBottom: 16 }} />
-
-            <label style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18, cursor: "pointer" }}>
-              <input type="checkbox" checked={dentroTrial} onChange={e => setDentroTrial(e.target.checked)} style={{ width: 18, height: 18 }} />
-              <span style={{ fontSize: "0.88em", color: "#A09880" }}>Pagamento dentro do período de trial</span>
-            </label>
-
-            {msg && (
-              <div style={{ padding: "10px 12px", borderRadius: 10, marginBottom: 14, fontSize: "0.84em",
-                background: msg.tipo === "ok" ? "#22C55E22" : "#EF444422", color: msg.tipo === "ok" ? "#22C55E" : "#EF4444" }}>
-                {msg.texto}
-              </div>
-            )}
-
-            {est === "ativo" && !confirmar && (
-              <div style={{ fontSize: "0.8em", color: "#F59E0B", marginBottom: 12 }}>
-                ⚠️ Este utilizador já tem um plano ativo. Confirma antes de registar outro pagamento.
-              </div>
-            )}
-
-            {!confirmar ? (
-              <button onClick={abrirConfirmacao} style={S.btn}>Confirmar pagamento</button>
-            ) : (
-              <>
-                <div style={{ background: "#141414", borderRadius: 12, padding: 14, marginBottom: 12, fontSize: "0.85em", color: "#A09880", lineHeight: 1.7 }}>
-                  Vais registar: <b style={{ color: "#E8E0D0" }}>{plano}</b> · <b style={{ color: "#E8E0D0" }}>{parseInt(valor || 0, 10).toLocaleString("pt")} Kz</b> · {dentroTrial ? "dentro do trial" : "fora do trial"}
-                </div>
-                <button onClick={enviar} disabled={aProcessar} style={{ ...S.btn, opacity: aProcessar ? 0.6 : 1, marginBottom: 8 }}>
-                  {aProcessar ? "A processar…" : "Sim, confirmar"}
-                </button>
-                <button onClick={() => setConfirmar(false)} style={{ width: "100%", background: "transparent", border: "none", color: "#8A8070", fontSize: "0.85em", cursor: "pointer", fontFamily: "inherit" }}>Cancelar</button>
-              </>
-            )}
+          <div style={{ background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: 12, padding: "14px 16px", fontSize: "0.82em", color: "#8A8070", lineHeight: 1.6 }}>
+            As ativações de pagamento são feitas na secção <b style={{ color: "#A09880" }}>Pagamentos pendentes</b>, quando o utilizador envia uma solicitação. Aqui vês apenas os dados da conta.
           </div>
         </div>
       </div>
@@ -3401,7 +3356,7 @@ function AdminScreen({ onBack }) {
           filtrados.map(p => {
             const est = estadoReal(p);
             return (
-              <button key={p.id} onClick={() => { setSelecionado(p); setValor(""); setPlano("mensal"); setDentroTrial(false); setMsg(null); setConfirmar(false); }}
+              <button key={p.id} onClick={() => { setSelecionado(p); setMsg(null); }}
                 style={{ width: "100%", textAlign: "left", background: "#0D0D0D", border: "1px solid #161616", borderRadius: 14, padding: "14px 16px", marginBottom: 8, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <div>
                   <div style={{ color: "#E8E0D0", fontWeight: 700, fontSize: "0.92em" }}>{p.nome || "(sem nome)"}</div>
@@ -3432,6 +3387,7 @@ export default function App() {
   const [screen, setScreen] = useState("auth");
   const [userId, setUserId] = useState(null);       // id do utilizador autenticado (Supabase)
   const [aCarregar, setACarregar] = useState(true); // a verificar sessão ao arrancar
+  const [authReady, setAuthReady] = useState(false); // decisão de navegação inicial concluída
   const [bloqueado, setBloqueado] = useState(false); // ecrã de PIN a bloquear o acesso
   const [definirPin, setDefinirPin] = useState(false); // mostrar ecrã de criar PIN
   const [isAdmin, setIsAdmin] = useState(false); // perfil.is_admin — mostra painel de admin
@@ -3448,6 +3404,19 @@ export default function App() {
   // Ao arrancar: verificar se há sessão ativa e carregar o perfil do Supabase.
   useEffect(() => {
     let vivo = true;
+    // Ecrãs internos seguros de restaurar após refresh (não decidem segurança sozinhos)
+    const ecrasRestauraveis = ["dashboard", "goals", "charts", "settings", "convite", "editarDados", "todasDespesas", "todasEntradas", "etiquetas"];
+    let ecraGuardado = null;
+    try { ecraGuardado = window.sessionStorage.getItem("klaco_screen"); } catch (e) {}
+
+    // Decide o ecrã final quando o utilizador tem setup completo:
+    // restaura o ecrã onde estava (se for seguro), senão vai ao dashboard.
+    const decidirEcraComSetup = (ehAdmin) => {
+      if (ecraGuardado && ecrasRestauraveis.includes(ecraGuardado)) return ecraGuardado;
+      if (ecraGuardado === "admin" && ehAdmin) return "admin"; // admin só se confirmado is_admin
+      return "dashboard";
+    };
+
     (async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
@@ -3455,36 +3424,57 @@ export default function App() {
           setUserId(session.user.id);
           const perfil = await carregarPerfil(session.user.id);
           if (perfil && vivo) {
-            setIsAdmin(perfil.is_admin === true);
-            // Estado da conta (do servidor) — para mostrar Free/Paga e o "Parabéns"
+            const ehAdmin = perfil.is_admin === true;
+            setIsAdmin(ehAdmin);
             const contaInfo = { estadoConta: perfil.estado || "trial", acessoAte: perfil.acesso_ate || null, planoAtivo: perfil.plano || null };
             const dados = perfil.dados && Object.keys(perfil.dados).length ? perfil.dados : null;
             if (dados) {
               setState(prev => ({ ...INIT, ...prev, ...dados, ...contaInfo, email: perfil.email || prev.email }));
-              // Se já tem PIN definido e setup feito, bloqueia até introduzir o código
-              if (dados.pin && dados.setup) { setBloqueado(true); setScreen("dashboard"); }
-              else setScreen(dados.setup ? "dashboard" : "setup");
+              if (dados.setup) {
+                // Tem setup: restaura o ecrã onde estava (validado), com PIN se aplicável
+                if (dados.pin) { setBloqueado(true); setScreen(decidirEcraComSetup(ehAdmin)); }
+                else setScreen(decidirEcraComSetup(ehAdmin));
+              } else {
+                setScreen("setup");
+              }
             } else {
               setState(prev => ({ ...prev, ...contaInfo }));
-              // Sem dados no servidor ainda: mantém o que houver em cache local, vai ao setup
-              setScreen("setup");
+              // Sem dados no servidor: só vai a setup se realmente não houver setup em cache
+              setScreen(state.setup ? decidirEcraComSetup(ehAdmin) : "setup");
             }
           } else if (vivo) {
-            setScreen("setup");
+            // Perfil não veio (pode ser erro temporário): não forçar setup se há cache com setup
+            setScreen(state.setup ? "dashboard" : "setup");
           }
-          // A partir daqui é seguro gravar (o perfil já foi lido)
           if (vivo) podeGravar.current = true;
         }
-      } catch (e) { console.error("sessão:", e); }
-      finally { if (vivo) setACarregar(false); }
+        // Sem sessão: fica em "auth" (o valor inicial). Não força nada.
+      } catch (e) {
+        console.error("sessão:", e);
+        // Erro a carregar: não navegar arbitrariamente. Se há cache com setup, mantém dashboard.
+        if (vivo && state.setup && userId) setScreen("dashboard");
+      }
+      finally { if (vivo) { setACarregar(false); setAuthReady(true); } }
     })();
 
     // Reagir a login/logout noutros separadores/sessões
     const { data: sub } = supabase.auth.onAuthStateChange((_evt, session) => {
-      setUserId(session?.user?.id ?? null);
+      const uid = session?.user?.id ?? null;
+      setUserId(uid);
+      // Se a sessão desaparece (logout/expirou), volta a auth
+      if (!uid) { setScreen("auth"); setIsAdmin(false); }
     });
     return () => { vivo = false; sub?.subscription?.unsubscribe?.(); };
   }, []);
+
+  // Guardar o ecrã atual (para restaurar após refresh) — só telas internas seguras.
+  useEffect(() => {
+    if (!authReady) return;
+    try {
+      if (["auth", "setup"].includes(screen)) window.sessionStorage.removeItem("klaco_screen");
+      else window.sessionStorage.setItem("klaco_screen", screen);
+    } catch (e) {}
+  }, [screen, authReady]);
 
   // Guardar o estado no Supabase, com debounce (evita gravar a cada tecla).
   // Só grava depois de o perfil ter sido carregado (podeGravar), para nunca
