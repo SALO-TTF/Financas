@@ -19,6 +19,8 @@ async function listarPerfis() {
   return lista;
 }
 
+// [NÃO USADA pelo painel atual] Ativação manual antiga. Mantida intacta a pedido do dev
+// (o fluxo atual usa solicitações pendentes: aprovarSolicitacao/rejeitarSolicitacao).
 async function adminAtivarPagamento({ user_id, plano, valor, dentro_do_trial }) {
   // Confirma sessão válida
   const { data: { session } } = await supabase.auth.getSession();
@@ -2888,6 +2890,16 @@ function AllEntradasScreen({ entradas, onEdit, onDelete, onBack, onAdd }) {
   );
 }
 
+// Extrai os campos da assinatura do perfil (Supabase) para o estado local.
+// Usado no login E no carregamento inicial, para dar o mesmo resultado nos dois.
+function infoAssinatura(perfil) {
+  return {
+    estadoConta: perfil?.estado || "trial",
+    acessoAte: perfil?.acesso_ate || null,
+    planoAtivo: perfil?.plano || null,
+  };
+}
+
 // ── APP ROOT ──────────────────────────────────────────────────────────────────
 const TRIAL_DAYS = 14;
 
@@ -3426,7 +3438,7 @@ export default function App() {
           if (perfil && vivo) {
             const ehAdmin = perfil.is_admin === true;
             setIsAdmin(ehAdmin);
-            const contaInfo = { estadoConta: perfil.estado || "trial", acessoAte: perfil.acesso_ate || null, planoAtivo: perfil.plano || null };
+            const contaInfo = infoAssinatura(perfil);
             const dados = perfil.dados && Object.keys(perfil.dados).length ? perfil.dados : null;
             if (dados) {
               setState(prev => ({ ...INIT, ...prev, ...dados, ...contaInfo, email: perfil.email || prev.email }));
@@ -3563,14 +3575,20 @@ export default function App() {
       // Carregar perfil (caso já exista de um login anterior)
       const perfil = await carregarPerfil(user.id);
       if (perfil) setIsAdmin(perfil.is_admin === true);
+      // Campos da assinatura (estado/acesso_ate/plano) vindos diretamente da tabela perfis
+      const contaInfo = infoAssinatura(perfil);
       const dados = perfil?.dados && Object.keys(perfil.dados).length ? perfil.dados : null;
       if (dados) {
-        setState(prev => ({ ...INIT, ...prev, ...dados, conta: true, email }));
+        setState(prev => ({ ...INIT, ...prev, ...dados, ...contaInfo, conta: true, email }));
         setScreen(dados.setup ? "dashboard" : "setup");
         podeGravar.current = true; // perfil lido → seguro gravar
         return;
       }
+      // Sem dados financeiros ainda, mas preserva o estado da assinatura do servidor
+      setState(prev => ({ ...prev, ...contaInfo, conta: true, email }));
       podeGravar.current = true; // conta nova, sem dados a apagar → seguro gravar
+      setScreen("setup");
+      return;
     }
     setState(prev => ({ ...prev, conta: true, email }));
     setScreen("setup");
