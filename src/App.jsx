@@ -3323,15 +3323,24 @@ function AdminScreen({ onBack }) {
             </div>
             {pendentes.map(pag => {
               const fmtD = (iso) => { try { const d = new Date(iso); return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()}`; } catch(e){ return iso || "—"; } };
+              // Identificar o utilizador: usar o que a Edge Function trouxer; se faltar,
+              // cruzar com a lista de perfis já carregada (pagamentos.user_id → perfis.id).
+              const perfilDoPag = perfis.find(p => p.id === (pag.user_id || pag.perfil_id)) || {};
+              const nome = pag.nome || pag.perfil_nome || perfilDoPag.nome || "(sem nome)";
+              const email = pag.email || perfilDoPag.email || null;
+              const telefone = pag.telefone || perfilDoPag.telefone || null;
               return (
                 <div key={pag.id} style={{ background: "#0D0D0D", border: "1px solid #F59E0B44", borderRadius: 14, padding: 16, marginBottom: 10 }}>
-                  <div style={{ fontSize: "0.9em", color: "#E8E0D0", fontWeight: 700 }}>{pag.nome || pag.perfil_nome || "(sem nome)"}</div>
-                  <div style={{ fontSize: "0.78em", color: "#8A8070", marginTop: 2 }}>{pag.email || pag.telefone || pag.user_id}</div>
-                  <div style={{ fontSize: "0.82em", color: "#A09880", marginTop: 8, lineHeight: 1.7 }}>
+                  <div style={{ fontSize: "0.95em", color: "#E8E0D0", fontWeight: 800 }}>{nome}</div>
+                  <div style={{ fontSize: "0.82em", color: "#A09880", marginTop: 8, lineHeight: 1.8 }}>
+                    {email && <>Email: <b style={{ color: "#E8E0D0" }}>{email}</b><br/></>}
+                    {telefone && <>Telefone: <b style={{ color: "#E8E0D0" }}>{telefone}</b><br/></>}
                     Plano: <b style={{ color: "#E8E0D0", textTransform: "capitalize" }}>{pag.plano}</b><br/>
                     Valor: <b style={{ color: "#E8E0D0" }}>{Number(pag.valor).toLocaleString("pt")} Kz</b><br/>
-                    Solicitado em: {fmtD(pag.criado_em)}
+                    Solicitado em: <b style={{ color: "#E8E0D0" }}>{fmtD(pag.criado_em)}</b><br/>
+                    Status: <b style={{ color: "#F59E0B", textTransform: "capitalize" }}>{pag.status || "pendente"}</b>
                   </div>
+                  <div style={{ fontSize: "0.68em", color: "#5A5245", marginTop: 8, wordBreak: "break-all" }}>Ref.: {pag.id}</div>
                   <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
                     <button onClick={() => aprovar(pag)} disabled={aProcessarPag === pag.id}
                       style={{ flex: 1, background: "#22C55E", border: "none", borderRadius: 10, padding: "11px", color: "#052E16", fontWeight: 800, fontSize: "0.85em", cursor: "pointer", fontFamily: "inherit", opacity: aProcessarPag === pag.id ? 0.6 : 1 }}>
