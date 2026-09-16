@@ -113,6 +113,18 @@ async function upsertPerfil(user, extra = {}) {
   if (error) console.error("upsertPerfil:", error.message);
 }
 
+// Persiste o NOME em perfis.nome no Supabase (fonte oficial do nome).
+// Usado no fim do setup e ao editar dados. O estado local é atualizado só depois.
+async function guardarNome(userId, nome) {
+  if (!userId || !nome) return { ok: false };
+  const { error } = await supabase
+    .from("perfis")
+    .update({ nome, atualizado_em: new Date().toISOString() })
+    .eq("id", userId);
+  if (error) { console.error("guardarNome:", error.message); return { ok: false, erro: error.message }; }
+  return { ok: true };
+}
+
 // Carrega o perfil do utilizador autenticado
 async function carregarPerfil(userId) {
   const { data, error } = await supabase.from("perfis").select("*").eq("id", userId).single();
@@ -3457,7 +3469,8 @@ export default function App() {
             const contaInfo = infoAssinatura(perfil);
             const dados = perfil.dados && Object.keys(perfil.dados).length ? perfil.dados : null;
             if (dados) {
-              setState(prev => ({ ...INIT, ...prev, ...dados, ...contaInfo, email: perfil.email || prev.email }));
+              // perfil.nome (coluna oficial) tem prioridade sobre o nome em dados/cache.
+              setState(prev => ({ ...INIT, ...prev, ...dados, ...contaInfo, ...(perfil.nome ? { nome: perfil.nome } : {}), email: perfil.email || prev.email }));
               if (dados.setup) {
                 // Tem setup: restaura o ecrã onde estava (validado), com PIN se aplicável
                 if (dados.pin) { setBloqueado(true); setScreen(decidirEcraComSetup(ehAdmin)); }
@@ -3596,7 +3609,7 @@ export default function App() {
       const contaInfo = infoAssinatura(perfil);
       const dados = perfil?.dados && Object.keys(perfil.dados).length ? perfil.dados : null;
       if (dados) {
-        setState(prev => ({ ...INIT, ...prev, ...dados, ...contaInfo, conta: true, email }));
+        setState(prev => ({ ...INIT, ...prev, ...dados, ...contaInfo, ...(perfil.nome ? { nome: perfil.nome } : {}), conta: true, email }));
         setScreen(dados.setup ? "dashboard" : "setup");
         podeGravar.current = true; // perfil lido → seguro gravar
         return;
@@ -3623,6 +3636,8 @@ export default function App() {
   const handleSetupDone = (data) => {
     setState(prev => ({ ...prev, ...data, setup: true, setupDate: todayStr() }));
     setScreen("dashboard");
+    // Persistir o nome em perfis.nome no Supabase (fonte oficial). Estado local já atualizado acima.
+    if (data?.nome && userId) guardarNome(userId, data.nome);
     // Se ainda não definiu PIN, pedir para criar um agora
     if (!state.pin) setDefinirPin(true);
   };
@@ -3650,7 +3665,10 @@ export default function App() {
     setBloqueado(false);
   };
 
-  const handleSettingsSave = (data) => {
+  const handleSettingsSave = async (data) => {
+    // Se o nome mudou, gravar primeiro em perfis.nome (Supabase = fonte oficial),
+    // e só depois atualizar o estado local para refletir o valor salvo.
+    if (data?.nome && userId) await guardarNome(userId, data.nome);
     setState(prev => ({ ...prev, ...data }));
     setScreen("dashboard");
   };
