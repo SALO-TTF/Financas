@@ -2069,6 +2069,8 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo,
   //   - DEPOIS dos 14 dias: preço cheio (mensal 1.000 / anual 10.000).
   const [etapa, setEtapa] = useState("escolha"); // escolha | metodo
   const [plano, setPlano] = useState(planoInicial || "anual");
+  const [aEnviar, setAEnviar] = useState(false);
+  const [msgSolicitacao, setMsgSolicitacao] = useState(null); // {tipo, texto}
 
   // Preços: com desconto (dentro do teste) vs cheio (depois)
   const PRECO = {
@@ -2183,8 +2185,6 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo,
   // Cliente transfere, envia o comprovativo por WhatsApp e clica "Já enviei o comprovativo",
   // o que cria uma SOLICITAÇÃO pendente (não ativa a conta). O admin aprova depois.
   const WHATSAPP = "244952272299";
-  const [aEnviar, setAEnviar] = useState(false);
-  const [msgSolicitacao, setMsgSolicitacao] = useState(null); // {tipo, texto}
   const msgWhats = encodeURIComponent(
     `Olá! Fiz o pagamento da Klaco (plano ${dados.nome} — ${dados.valor}). Segue o comprovativo.`
   );
@@ -3420,6 +3420,13 @@ export default function App() {
     const ecrasRestauraveis = ["dashboard", "goals", "charts", "settings", "convite", "editarDados", "todasDespesas", "todasEntradas", "etiquetas"];
     let ecraGuardado = null;
     try { ecraGuardado = window.sessionStorage.getItem("klaco_screen"); } catch (e) {}
+    // Lê o "setup" diretamente do cache local (não do state do closure, que fica congelado
+    // na primeira renderização). Assim as decisões de navegação usam o valor atual do cache.
+    let setupEmCache = false;
+    try {
+      const guardado = window.localStorage.getItem("klaco_state");
+      if (guardado) setupEmCache = !!JSON.parse(guardado)?.setup;
+    } catch (e) {}
 
     // Decide o ecrã final quando o utilizador tem setup completo:
     // restaura o ecrã onde estava (se for seguro), senão vai ao dashboard.
@@ -3451,12 +3458,13 @@ export default function App() {
               }
             } else {
               setState(prev => ({ ...prev, ...contaInfo }));
-              // Sem dados no servidor: só vai a setup se realmente não houver setup em cache
-              setScreen(state.setup ? decidirEcraComSetup(ehAdmin) : "setup");
+              // Sem dados no servidor: só vai a setup se realmente não houver setup em cache.
+              // Lê o setup do cache local diretamente (não do state do closure, que pode estar stale).
+              setScreen(setupEmCache ? decidirEcraComSetup(ehAdmin) : "setup");
             }
           } else if (vivo) {
             // Perfil não veio (pode ser erro temporário): não forçar setup se há cache com setup
-            setScreen(state.setup ? "dashboard" : "setup");
+            setScreen(setupEmCache ? "dashboard" : "setup");
           }
           if (vivo) podeGravar.current = true;
         }
@@ -3464,7 +3472,7 @@ export default function App() {
       } catch (e) {
         console.error("sessão:", e);
         // Erro a carregar: não navegar arbitrariamente. Se há cache com setup, mantém dashboard.
-        if (vivo && state.setup && userId) setScreen("dashboard");
+        if (vivo && setupEmCache) setScreen("dashboard");
       }
       finally { if (vivo) { setACarregar(false); setAuthReady(true); } }
     })();
