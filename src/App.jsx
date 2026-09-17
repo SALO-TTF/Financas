@@ -3666,9 +3666,16 @@ export default function App() {
   };
 
   const handleSettingsSave = async (data) => {
-    // Se o nome mudou, gravar primeiro em perfis.nome (Supabase = fonte oficial),
-    // e só depois atualizar o estado local para refletir o valor salvo.
-    if (data?.nome && userId) await guardarNome(userId, data.nome);
+    // O nome é persistido no Supabase ANTES de atualizar o ecrã (Supabase = fonte oficial).
+    // Só atualiza o estado visual depois de o banco confirmar o UPDATE.
+    if (data?.nome && userId) {
+      const r = await guardarNome(userId, data.nome);
+      if (!r.ok) {
+        // Falhou a gravação no banco: não atualiza o visual com um valor que não persistiu.
+        alert("Não foi possível guardar o nome. Verifica a ligação e tenta de novo.");
+        return;
+      }
+    }
     setState(prev => ({ ...prev, ...data }));
     setScreen("dashboard");
   };
