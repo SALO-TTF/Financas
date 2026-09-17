@@ -2070,7 +2070,7 @@ function AnelContagem({ diasRestantes, total = 14 }) {
   );
 }
 
-function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo, dentroDoTeste = false, diasRestantes = 0, onFechar }) {
+function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo, dentroDoTeste = false, diasRestantes = 0, onFechar, subscricaoExpirada = false }) {
   // ── PAGAMENTO VIA GATEWAY (AppyPay / BAI) ──
   // [DEV] Ao tocar num método, iniciar o pagamento no gateway enviando:
   //         merchant_reference = user_id  (liga o pagamento à conta)
@@ -2139,6 +2139,14 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo,
                   </div>
                 </div>
               </div>
+            </>
+          ) : subscricaoExpirada ? (
+            <>
+              <div style={{ fontSize: "2.5em", marginBottom: 12 }}>⏳</div>
+              <div style={{ ...S.logo, marginBottom: 8 }}>A tua subscrição expirou</div>
+              <p style={{ color: "#A09880", fontSize: "0.92em", lineHeight: 1.6, marginBottom: 22 }}>
+                Os teus dados estão guardados. Renova para continuares a saber, todos os dias, quanto podes gastar. 🌅
+              </p>
             </>
           ) : (
             <>
@@ -3518,6 +3526,33 @@ export default function App() {
     } catch (e) {}
   }, [screen, authReady]);
 
+  // Deteta a aprovação do pagamento sem exigir logout/login.
+  // Enquanto o utilizador está logado e a conta NÃO está paga, recarrega o perfil
+  // periodicamente (intervalo moderado). Assim que o servidor refletir estado='ativo'
+  // e acesso_ate no futuro, o estado local atualiza e a app sai do ecrã de bloqueio.
+  useEffect(() => {
+    if (!userId) return;
+    // Só faz sentido enquanto a conta ainda não está paga/válida.
+    const jaPaga = state.estadoConta === "ativo" && state.acessoAte && state.acessoAte >= todayStr();
+    if (jaPaga) return;
+    let vivo = true;
+    const intervalo = setInterval(async () => {
+      try {
+        const perfil = await carregarPerfil(userId);
+        if (!perfil || !vivo) return;
+        const info = infoAssinatura(perfil);
+        // Atualiza só se algo mudou (evita re-render desnecessário)
+        setState(prev => {
+          if (prev.estadoConta === info.estadoConta && prev.acessoAte === info.acessoAte && prev.planoAtivo === info.planoAtivo) {
+            return prev;
+          }
+          return { ...prev, ...info };
+        });
+      } catch (e) { /* silencioso — tenta de novo no próximo ciclo */ }
+    }, 30000); // 30s: moderado, sem sobrecarregar
+    return () => { vivo = false; clearInterval(intervalo); };
+  }, [userId, state.estadoConta, state.acessoAte]);
+
   // Guardar o estado no Supabase, com debounce (evita gravar a cada tecla).
   // Só grava depois de o perfil ter sido carregado (podeGravar), para nunca
   // sobrescrever perfis.dados com um estado inicial vazio.
@@ -3561,9 +3596,14 @@ export default function App() {
   //       (marcar a conta como estado='ativo' permanente), em vez de estar no código.
   const CONTAS_LIVRES = ["jezreelalfredo@hotmail.com"];
   const contaLivre = state.email && CONTAS_LIVRES.includes(String(state.email).trim().toLowerCase());
-  // Conta paga (estado ativo no servidor e acesso ainda válido) nunca está "expirada".
+  // Estado REAL da subscrição (calculado da data, não só de estadoConta):
+  // - contaPaga: estado 'ativo' no servidor E acesso ainda válido (data no futuro)
+  // - subscricaoExpirada: já teve um plano pago (tem acessoAte) mas a data já passou
   const contaPaga = state.estadoConta === "ativo" && state.acessoAte && state.acessoAte >= todayStr();
-  const trialExpired = state.setup && trialDaysUsed >= TRIAL_DAYS && !contaLivre && !contaPaga;
+  const subscricaoExpirada = !!state.acessoAte && state.acessoAte < todayStr();
+  // Bloqueio: trial gratuito esgotado OU subscrição paga expirada (ambos exigem pagar).
+  const trialExpired = state.setup && !contaLivre && !contaPaga &&
+    (subscricaoExpirada || trialDaysUsed >= TRIAL_DAYS);
 
   const handleDispensarDica = () => {
     setState(prev => ({ ...prev, dicaRegistoMostrada: true }));
@@ -4007,6 +4047,7 @@ export default function App() {
           comprovativoEnviado={state.comprovativoEnviado}
           planoInicial={state.planoEscolhido}
           onComprovativo={handleComprovativoEnviado}
+          subscricaoExpirada={subscricaoExpirada}
         />
       </div>
     );
