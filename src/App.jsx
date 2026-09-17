@@ -3633,11 +3633,19 @@ export default function App() {
     setScreen("auth");
   };
 
-  const handleSetupDone = (data) => {
+  const handleSetupDone = async (data) => {
+    // Persistir o nome em perfis.nome ANTES de concluir o setup (Supabase = fonte oficial).
+    // Aguardamos a gravação; se falhar, avisamos e não navegamos (não fingir que concluiu).
+    if (data?.nome && userId) {
+      const resultadoNome = await guardarNome(userId, data.nome);
+      if (!resultadoNome.ok) {
+        console.error("Erro ao guardar nome:", resultadoNome.erro);
+        alert("Não foi possível guardar o teu nome. Verifica a ligação e tenta de novo.");
+        return; // mantém no setup; não considera o cadastro concluído
+      }
+    }
     setState(prev => ({ ...prev, ...data, setup: true, setupDate: todayStr() }));
     setScreen("dashboard");
-    // Persistir o nome em perfis.nome no Supabase (fonte oficial). Estado local já atualizado acima.
-    if (data?.nome && userId) guardarNome(userId, data.nome);
     // Se ainda não definiu PIN, pedir para criar um agora
     if (!state.pin) setDefinirPin(true);
   };
@@ -4084,7 +4092,7 @@ export default function App() {
         </>
       )}
       {screen === "admin"      && <AdminScreen onBack={() => setScreen("settings")} />}
-      {screen === "settings"   && <SettingsScreen state={state} onToggleNotif={handleToggleNotif} onBack={() => setScreen("dashboard")} onEditarDados={() => setScreen("editarDados")} onVerDespesas={() => setScreen("todasDespesas")} onVerEntradas={() => setScreen("todasEntradas")} onOpenConvite={() => setScreen("convite")} onVerEtiquetas={() => setScreen("etiquetas")} onOpenPlano={() => setMostrarPagarJa(true)} planoSub={trialExpired ? "O teu período gratuito terminou — subscreve" : `Período gratuito — ${trialDaysLeft} dias restantes`} onOpenAvaliacao={() => { setAvaliacaoManual(true); setMostrarAvaliacao(true); }} isAdmin={isAdmin} onOpenAdmin={() => setScreen("admin")} />}
+      {screen === "settings"   && <SettingsScreen state={state} onToggleNotif={handleToggleNotif} onBack={() => setScreen("dashboard")} onEditarDados={() => setScreen("editarDados")} onVerDespesas={() => setScreen("todasDespesas")} onVerEntradas={() => setScreen("todasEntradas")} onOpenConvite={() => setScreen("convite")} onVerEtiquetas={() => setScreen("etiquetas")} onOpenPlano={() => setMostrarPagarJa(true)} planoSub={contaPaga ? `Conta ativa${state.planoAtivo ? " · " + (state.planoAtivo === "anual" ? "Anual" : "Mensal") : ""}` : (trialExpired ? "O teu período gratuito terminou — subscreve" : `Período gratuito — ${trialDaysLeft} dias restantes`)} onOpenAvaliacao={() => { setAvaliacaoManual(true); setMostrarAvaliacao(true); }} isAdmin={isAdmin} onOpenAdmin={() => setScreen("admin")} />}
       {screen === "etiquetas"  && <EtiquetasScreen etiquetasCustom={state.etiquetasCustom || {}} onDelete={handleDeleteEtiqueta} onBack={() => setScreen("settings")} />}
       {screen === "editarDados" && <EditarDadosScreen state={state} onSave={handleSettingsSave} onBack={() => setScreen("settings")} />}
       {screen === "convite"     && <ConviteScreen inviteCode={state.inviteCode} inviteCount={state.inviteCount} diasAtivos={diasAtivos} onBack={() => setScreen("dashboard")} />}
