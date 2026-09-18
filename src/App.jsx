@@ -2917,6 +2917,7 @@ function infoAssinatura(perfil) {
     estadoConta: perfil?.estado || "trial",
     acessoAte: perfil?.acesso_ate || null,
     planoAtivo: perfil?.plano || null,
+    trialInicio: perfil?.trial_inicio || null, // fonte OFICIAL do início do trial (servidor)
   };
 }
 
@@ -3196,6 +3197,7 @@ const INIT = {
   pin: null,                  // PIN de 4 dígitos (proteção local do acesso)
   biometriaAtiva: false,      // a pessoa ativou entrar por biometria?
   estadoConta: "trial",       // estado no servidor: trial | ativo | expirado
+  trialInicio: null,          // início do trial vindo do servidor (perfis.trial_inicio) — fonte oficial
   acessoAte: null,            // data até quando o acesso pago é válido
   planoAtivo: null,           // mensal | anual (quando pago)
   parabensPagamentoVisto: false, // já mostrou o "Parabéns, tens acesso"?
@@ -3588,8 +3590,11 @@ export default function App() {
     }));
   }, [state.setup, state.dataRecebimento, state.objectivos]);
 
-  // Trial day calculation (uses daysSince helper)
-  const trialDaysUsed = state.setupDate ? daysSince(state.setupDate) : 0;
+  // Cálculo do trial — FONTE OFICIAL: perfis.trial_inicio (servidor, protegido).
+  // O trial_inicio vem do Supabase e não pode ser manipulado no navegador.
+  // state.setupDate fica apenas como fallback para contas antigas sem trial_inicio.
+  const inicioTrial = state.trialInicio || state.setupDate || null;
+  const trialDaysUsed = inicioTrial ? daysSince(inicioTrial) : 0;
   const trialDaysLeft = Math.max(0, TRIAL_DAYS - trialDaysUsed);
   // Contas com acesso sempre livre (dona/equipa) — nunca expiram no trial.
   // [DEV] Quando o Supabase estiver ligado, mover isto para a base de dados
