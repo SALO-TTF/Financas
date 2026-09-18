@@ -2077,8 +2077,8 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo,
   //         metadata = { plano, dentro_trial }
   //       A confirmação chega pelo webhook (ver doc do backend) e ativa o acesso.
   // [DEV] REGRA DE PREÇO (aplicada na cobrança/renovação pelo backend):
-  //   - DENTRO dos 14 dias: 1º pagamento com 50% (mensal 500 / anual 5.000); renova a cheio.
-  //   - DEPOIS dos 14 dias: preço cheio (mensal 1.000 / anual 10.000).
+  //   - DENTRO do período de teste: 1º pagamento com 50% (mensal 500 / anual 5.000); renova a cheio.
+  //   - DEPOIS do período de teste: preço cheio (mensal 1.000 / anual 10.000).
   const [etapa, setEtapa] = useState("escolha"); // escolha | metodo
   const [plano, setPlano] = useState(planoInicial || "anual");
   const [aEnviar, setAEnviar] = useState(false);
@@ -2128,7 +2128,7 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo,
           )}
 
           {dentroDoTeste ? (
-            // Dentro dos 14 dias — oferta de desconto com anel de urgência
+            // Dentro do período de teste — oferta de desconto com anel de urgência
             <>
               <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 18 }}>
                 <AnelContagem diasRestantes={diasRestantes} />
@@ -2151,7 +2151,7 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo,
           ) : (
             <>
               <div style={{ fontSize: "2.5em", marginBottom: 12 }}>🔓</div>
-              <div style={{ ...S.logo, marginBottom: 8 }}>Os teus 14 dias gratuitos acabaram</div>
+              <div style={{ ...S.logo, marginBottom: 8 }}>Os teus 7 dias gratuitos acabaram</div>
               <p style={{ color: "#A09880", fontSize: "0.92em", lineHeight: 1.6, marginBottom: 22 }}>
                 Já sabes o que é abrir o telemóvel e saber exactamente quanto podes gastar hoje. Continua a gastar sem culpa.
               </p>
@@ -2921,7 +2921,7 @@ function infoAssinatura(perfil) {
 }
 
 // ── APP ROOT ──────────────────────────────────────────────────────────────────
-const TRIAL_DAYS = 14;
+const TRIAL_DAYS = 7;
 
 // Modal "Parabéns, tens acesso" — aparece quando o pagamento é confirmado
 function ParabensPagamentoModal({ plano, acessoAte, onFechar }) {
@@ -4110,8 +4110,8 @@ export default function App() {
               </div>
             </div>
           )}
-          {/* Bloco de subscrição — no fim do Início, com anel de urgência durante o teste */}
-          {state.setup && !trialExpired && (
+          {/* Bloco de subscrição — só durante o teste, escondido quando a conta está paga */}
+          {state.setup && !trialExpired && !contaPaga && (
             <div style={{ padding: "8px 16px 20px" }}>
               <div style={{ background: "linear-gradient(160deg,#0F0C00,#0A0800)", border: `1px solid ${trialDaysLeft <= 3 ? "rgba(239,68,68,0.3)" : "rgba(245,158,11,0.2)"}`, borderRadius: 20, padding: "20px", display: "flex", alignItems: "center", gap: 16 }}>
                 <AnelContagem diasRestantes={trialDaysLeft} />
@@ -4213,7 +4213,7 @@ export default function App() {
 // ── STYLES ────────────────────────────────────────────────────────────────────
 const S = {
   app: { minHeight: "100vh", background: "#080808", fontFamily: "'Plus Jakarta Sans', sans-serif", color: "#E8E0D0", maxWidth: 480, margin: "0 auto" },
-  screen: { minHeight: "100vh", overflowY: "auto", paddingTop: "calc(12px + env(safe-area-inset-top, 0px))", paddingBottom: 100, animation: "slideUp 0.25s ease" },
+  screen: { minHeight: "100vh", overflowY: "auto", paddingTop: "calc(12px + env(safe-area-inset-top, 0px))", paddingBottom: "calc(120px + env(safe-area-inset-bottom, 0px))", animation: "slideUp 0.25s ease" },
 
   // Modais — overlay centrado sobre fundo escuro, com scroll se o conteúdo for alto
   modalOverlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", padding: "20px", zIndex: 1000, overflowY: "auto" },
