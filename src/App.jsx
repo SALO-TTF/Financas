@@ -2086,12 +2086,12 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo,
 
   // Preços: com desconto (dentro do teste) vs cheio (depois)
   const PRECO = {
-    anual:  { normal: "12.000 Kz", desconto: "6.000 Kz", periodo: "por ano", nome: "Anual" },
-    mensal: { normal: "1.000 Kz",  desconto: "1.000 Kz", periodo: "por mês", nome: "Mensal" },
+    anual:  { cheio: "12.000 Kz", normal: "10.000 Kz", desconto: "6.000 Kz", periodo: "por ano", nome: "Anual" },
+    mensal: { cheio: "1.000 Kz",  normal: "1.000 Kz",  desconto: "1.000 Kz", periodo: "por mês", nome: "Mensal" },
   };
   const p = PRECO[plano];
   const valorAtual = dentroDoTeste ? p.desconto : p.normal;
-  const dados = { valor: valorAtual, periodo: p.periodo, nome: p.nome };
+  const dados = { valor: valorAtual, cheio: p.cheio, periodo: p.periodo, nome: p.nome };
 
   // ── ECRÃ DEMO — após escolher um método (representa o hand-off ao gateway) ──
   if (comprovativoEnviado) {
@@ -2161,7 +2161,7 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo,
           <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 22 }}>
             <button onClick={() => setPlano("anual")}
               style={{ position: "relative", textAlign: "left", background: plano === "anual" ? "#F59E0B12" : "#0A0A0A", border: `2px solid ${plano === "anual" ? "#F59E0B" : "#1E1E1E"}`, borderRadius: 16, padding: "16px 18px", cursor: "pointer", fontFamily: "inherit" }}>
-              <div style={{ position: "absolute", top: -10, right: 16, background: dentroDoTeste ? "#22C55E" : "#F59E0B", color: "#000", fontSize: "0.68em", fontWeight: 800, padding: "3px 10px", borderRadius: 20 }}>{dentroDoTeste ? "POUPA 50%" : "MELHOR VALOR"}</div>
+              <div style={{ position: "absolute", top: -10, right: 16, background: dentroDoTeste ? "#22C55E" : "#F59E0B", color: "#000", fontSize: "0.68em", fontWeight: 800, padding: "3px 10px", borderRadius: 20 }}>{dentroDoTeste ? "POUPA 50%" : "MAIS ESCOLHIDO"}</div>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <div style={{ width: 22, height: 22, borderRadius: "50%", border: `2px solid ${plano === "anual" ? "#F59E0B" : "#444"}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                   {plano === "anual" && <div style={{ width: 11, height: 11, borderRadius: "50%", background: "#F59E0B" }} />}
@@ -2171,7 +2171,7 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo,
                   <div style={{ fontSize: "0.78em", color: "#8A8070", marginTop: 2 }}>
                     {dentroDoTeste
                       ? <><span style={{ textDecoration: "line-through" }}>12.000 Kz</span> &nbsp;<span style={{ color: "#22C55E", fontWeight: 700 }}>6.000 Kz</span> por ano</>
-                      : <>12.000 Kz por ano</>}
+                      : <><span style={{ textDecoration: "line-through" }}>12.000 Kz</span> &nbsp;<span style={{ color: "#22C55E", fontWeight: 700 }}>10.000 Kz</span> por ano</>}
                   </div>
                 </div>
               </div>
@@ -2234,7 +2234,12 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo,
         <div style={{ ...S.logo, marginBottom: 4, fontSize: "1.1em" }}>Plano {dados.nome}</div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18, paddingBottom: 14, borderBottom: "1px solid #1A1A1A" }}>
           <span style={{ color: "#A09880", fontSize: "0.88em" }}>Valor a pagar</span>
-          <span style={{ color: "#F59E0B", fontSize: "1.2em", fontWeight: 800 }}>{dados.valor} <span style={{ fontSize: "0.6em", color: "#8A8070", fontWeight: 600 }}>{dados.periodo}</span></span>
+          <span style={{ color: "#F59E0B", fontSize: "1.2em", fontWeight: 800 }}>
+            {dados.cheio && dados.cheio !== dados.valor && (
+              <span style={{ textDecoration: "line-through", color: "#6A6050", fontSize: "0.75em", marginRight: 6 }}>{dados.cheio}</span>
+            )}
+            {dados.valor} <span style={{ fontSize: "0.6em", color: "#8A8070", fontWeight: 600 }}>{dados.periodo}</span>
+          </span>
         </div>
 
         <div style={{ fontSize: "0.78em", fontWeight: 700, letterSpacing: "0.08em", color: "#8A8070", marginBottom: 12 }}>
@@ -2246,7 +2251,7 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo,
           <div style={{ fontSize: "0.72em", color: "#8A8070", marginBottom: 3 }}>IBAN</div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
             <span style={{ fontSize: "0.92em", color: "#E8E0D0", fontWeight: 600, wordBreak: "break-all" }}>AO06 0040 0000 4299 0859 1013 3</span>
-            <button onClick={() => { try { navigator.clipboard.writeText("AO06004000004299085910133"); } catch (e) {} }}
+            <button onClick={() => { try { navigator.clipboard.writeText("004000004299085910133"); } catch (e) {} }}
               style={{ flexShrink: 0, background: "transparent", border: "1px solid #2A2A2A", borderRadius: 8, padding: "4px 10px", color: "#F59E0B", fontSize: "0.72em", cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>
               Copiar
             </button>
@@ -3620,9 +3625,11 @@ export default function App() {
       setState(prev => ({ ...prev, comprovativoEnviado: false }));
       return { ok: true };
     }
+    const dentroTrial = trialDaysUsed < TRIAL_DAYS;
+    // Anual: 12.000 Kz de tabela — 6.000 Kz no trial (50%), 10.000 Kz fora do trial (2 meses grátis).
+    const valorNum = plano === "anual" ? (dentroTrial ? 6000 : 10000) : 1000;
     // Criar a solicitação de pagamento (status 'pendente' no servidor). NÃO ativa a conta.
-    const valorNum = plano === "anual" ? (trialDaysUsed < TRIAL_DAYS ? 6000 : 12000) : 1000;
-    const r = await criarSolicitacaoPagamento({ plano, valor: valorNum, dentroTrial: trialDaysUsed < TRIAL_DAYS });
+    const r = await criarSolicitacaoPagamento({ plano, valor: valorNum, dentroTrial });
     if (r.ok) {
       setState(prev => ({ ...prev, comprovativoEnviado: true, planoEscolhido: plano }));
     }
