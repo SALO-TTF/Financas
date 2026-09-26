@@ -1128,13 +1128,14 @@ function EtiquetasScreen({ etiquetasCustom = {}, onDelete, onBack }) {
   );
 }
 
-function SettingsScreen({ state, onToggleNotif, onBack, onEditarDados, onVerDespesas, onVerEntradas, onOpenConvite, onVerEtiquetas, onOpenPlano, planoSub, onOpenAvaliacao, isAdmin, onOpenAdmin }) {
+function SettingsScreen({ state, onToggleNotif, onBack, onEditarDados, onVerDespesas, onVerEntradas, onOpenConvite, onVerEtiquetas, onOpenPlano, planoSub, onOpenAvaliacao, isAdmin, onOpenAdmin, onLogout }) {
   // Número de WhatsApp da empresa
   const WHATSAPP_SUPORTE = "244923933353";
   const abrirSuporte = () => {
     const msg = encodeURIComponent("Olá! Preciso de ajuda com a Klaco: ");
     window.open(`https://wa.me/${WHATSAPP_SUPORTE}?text=${msg}`, "_blank");
   };
+  const [confirmarLogout, setConfirmarLogout] = useState(false);
 
   const Opcao = ({ emoji, titulo, sub, onClick, cor = "#E8E0D0" }) => (
     <button onClick={onClick}
@@ -1229,7 +1230,30 @@ function SettingsScreen({ state, onToggleNotif, onBack, onEditarDados, onVerDesp
           ativo={state.notifNovidades}
           onToggle={() => onToggleNotif("notifNovidades")}
         />
+
+        {/* SAIR DA CONTA — visível, com confirmação antes de terminar a sessão */}
+        <div style={{ fontSize: "0.72em", fontWeight: 700, letterSpacing: "0.08em", color: "#6A6050", margin: "18px 4px 10px" }}>CONTA</div>
+        <Opcao emoji="🚪" titulo="Sair da conta" sub="Terminar sessão neste aparelho" onClick={() => setConfirmarLogout(true)} cor="#EF4444" />
       </div>
+
+      {confirmarLogout && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 200, animation: "slideUp 0.25s ease" }}>
+          <div style={{ width: "100%", maxWidth: 480, background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: "24px 24px 0 0", padding: "28px 24px 40px" }}>
+            <div style={{ fontSize: "1.05em", fontWeight: 800, color: "#E8E0D0", marginBottom: 10 }}>Sair da conta?</div>
+            <p style={{ color: "#A09880", fontSize: "0.9em", lineHeight: 1.6, marginBottom: 22 }}>
+              Terás de confirmar novamente o teu email ou telefone para entrar.
+            </p>
+            <button onClick={onLogout}
+              style={{ width: "100%", background: "#EF4444", border: "none", borderRadius: 14, padding: "15px", color: "#fff", fontWeight: 800, fontSize: "0.95em", cursor: "pointer", fontFamily: "inherit", marginBottom: 10 }}>
+              Sair
+            </button>
+            <button onClick={() => setConfirmarLogout(false)}
+              style={{ width: "100%", background: "transparent", border: "1px solid #2A2A2A", borderRadius: 14, padding: "15px", color: "#E8E0D0", fontWeight: 700, fontSize: "0.95em", cursor: "pointer", fontFamily: "inherit" }}>
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -3687,13 +3711,23 @@ export default function App() {
 
   const handleSetupDone = async (data) => {
     // Persistir o nome em perfis.nome ANTES de concluir o setup (Supabase = fonte oficial).
-    // Aguardamos a gravação; se falhar, avisamos e não navegamos (não fingir que concluiu).
-    if (data?.nome && userId) {
-      const resultadoNome = await guardarNome(userId, data.nome);
-      if (!resultadoNome.ok) {
-        console.error("Erro ao guardar nome:", resultadoNome.erro);
-        alert("Não foi possível guardar o teu nome. Verifica a ligação e tenta de novo.");
-        return; // mantém no setup; não considera o cadastro concluído
+    // ID: obter diretamente da sessão autenticada (fonte principal); userId (estado) só como fallback,
+    // para não depender de um valor de estado que possa estar desatualizado.
+    if (data?.nome) {
+      let idParaGravar = userId; // fallback
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user?.id) idParaGravar = user.id;
+      } catch (e) {
+        console.error("Erro ao obter utilizador autenticado:", e);
+      }
+      if (idParaGravar) {
+        const resultadoNome = await guardarNome(idParaGravar, data.nome);
+        if (!resultadoNome.ok) {
+          console.error("Erro ao guardar nome:", resultadoNome.erro);
+          alert("Não foi possível guardar o teu nome. Verifica a ligação e tenta de novo.");
+          return; // mantém no setup; não considera o cadastro concluído
+        }
       }
     }
     setState(prev => ({ ...prev, ...data, setup: true, setupDate: todayStr() }));
@@ -4145,7 +4179,7 @@ export default function App() {
         </>
       )}
       {screen === "admin"      && <AdminScreen onBack={() => setScreen("settings")} />}
-      {screen === "settings"   && <SettingsScreen state={state} onToggleNotif={handleToggleNotif} onBack={() => setScreen("dashboard")} onEditarDados={() => setScreen("editarDados")} onVerDespesas={() => setScreen("todasDespesas")} onVerEntradas={() => setScreen("todasEntradas")} onOpenConvite={() => setScreen("convite")} onVerEtiquetas={() => setScreen("etiquetas")} onOpenPlano={() => setMostrarPagarJa(true)} planoSub={contaPaga ? `Conta ativa${state.planoAtivo ? " · " + (state.planoAtivo === "anual" ? "Anual" : "Mensal") : ""}` : (trialExpired ? "O teu período gratuito terminou — subscreve" : `Período gratuito — ${trialDaysLeft} dias restantes`)} onOpenAvaliacao={() => { setAvaliacaoManual(true); setMostrarAvaliacao(true); }} isAdmin={isAdmin} onOpenAdmin={() => setScreen("admin")} />}
+      {screen === "settings"   && <SettingsScreen state={state} onToggleNotif={handleToggleNotif} onBack={() => setScreen("dashboard")} onEditarDados={() => setScreen("editarDados")} onVerDespesas={() => setScreen("todasDespesas")} onVerEntradas={() => setScreen("todasEntradas")} onOpenConvite={() => setScreen("convite")} onVerEtiquetas={() => setScreen("etiquetas")} onOpenPlano={() => setMostrarPagarJa(true)} planoSub={contaPaga ? `Conta ativa${state.planoAtivo ? " · " + (state.planoAtivo === "anual" ? "Anual" : "Mensal") : ""}` : (trialExpired ? "O teu período gratuito terminou — subscreve" : `Período gratuito — ${trialDaysLeft} dias restantes`)} onOpenAvaliacao={() => { setAvaliacaoManual(true); setMostrarAvaliacao(true); }} isAdmin={isAdmin} onOpenAdmin={() => setScreen("admin")} onLogout={handleLogout} />}
       {screen === "etiquetas"  && <EtiquetasScreen etiquetasCustom={state.etiquetasCustom || {}} onDelete={handleDeleteEtiqueta} onBack={() => setScreen("settings")} />}
       {screen === "editarDados" && <EditarDadosScreen state={state} onSave={handleSettingsSave} onBack={() => setScreen("settings")} />}
       {screen === "convite"     && <ConviteScreen inviteCode={state.inviteCode} inviteCount={state.inviteCount} diasAtivos={diasAtivos} onBack={() => setScreen("dashboard")} />}
