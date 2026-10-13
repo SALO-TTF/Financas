@@ -986,6 +986,12 @@ function DashboardScreen({ state, onAddExpense, onAddEntrada, onOpenCharts, onOp
           const pctUsed = orc > 0 ? Math.min(100, (totalUsado / orc) * 100) : 0;
           const over = totalUsado > orc;
           const restante = orc - totalUsado;
+          // Taxa diária desta categoria: igual lógica do número principal — orçamento do
+          // PERÍODO INTEIRO dividido pelos dias do período inteiro (não pelos dias restantes
+          // do que sobra), para bater sempre com o "PODES GASTAR HOJE".
+          const taxaDiariaCat = diasPeriodo > 0 ? orc / diasPeriodo : orc;
+          const restanteAjustadoCat = (taxaDiariaCat * diasRestantes) - totalUsado;
+          const hojeCat = diasRestantes > 0 ? restanteAjustadoCat / diasRestantes : restanteAjustadoCat;
           return (
             <div key={c.id} style={S.categoryCard}>
               <div style={S.catHeader}>
@@ -1018,9 +1024,9 @@ function DashboardScreen({ state, onAddExpense, onAddEntrada, onOpenCharts, onOp
                     <span style={{ fontSize: "0.82em", color: "#22C55E", fontWeight: 600 }}>
                       ✓ {fmtKz(restante)} disponível
                     </span>
-                    {diasRestantes > 0 && restante > 0 && (
+                    {diasRestantes > 0 && hojeCat > 0 && (
                       <span style={{ fontSize: "0.75em", color: "#8A8070" }}>
-                        hoje: {fmtKz(restante / diasRestantes)}
+                        hoje: {fmtKz(hojeCat)}
                       </span>
                     )}
                   </div>
@@ -2094,7 +2100,7 @@ function AnelContagem({ diasRestantes, total = 14 }) {
   );
 }
 
-function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo, dentroDoTeste = false, diasRestantes = 0, onFechar, subscricaoExpirada = false }) {
+function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo, dentroDoTeste = false, diasRestantes = 0, onFechar, subscricaoExpirada = false, onTrocarConta }) {
   // ── PAGAMENTO VIA GATEWAY (AppyPay / BAI) ──
   // [DEV] Ao tocar num método, iniciar o pagamento no gateway enviando:
   //         merchant_reference = user_id  (liga o pagamento à conta)
@@ -2107,6 +2113,7 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo,
   const [plano, setPlano] = useState(planoInicial || "anual");
   const [aEnviar, setAEnviar] = useState(false);
   const [msgSolicitacao, setMsgSolicitacao] = useState(null); // {tipo, texto}
+  const [aTrocarConta, setATrocarConta] = useState(false);
 
   // Preços: com desconto (dentro do teste) vs cheio (depois)
   const PRECO = {
@@ -2220,6 +2227,20 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo,
           <button onClick={() => setEtapa("metodo")} style={S.btn}>
             Continuar
           </button>
+
+          <p style={{ fontSize: "0.8em", color: "#8A8070", textAlign: "center", lineHeight: 1.6, marginTop: 18 }}>
+            Precisas de ajuda? Fala com o suporte da Klaco:{" "}
+            <a href="mailto:suporte@klaco.app" style={{ color: "#F59E0B", textDecoration: "none", fontWeight: 600 }}>suporte@klaco.app</a>
+          </p>
+
+          {onTrocarConta && (
+            <button
+              disabled={aTrocarConta}
+              onClick={async () => { setATrocarConta(true); try { await onTrocarConta(); } finally { setATrocarConta(false); } }}
+              style={{ width: "100%", background: "transparent", border: "none", color: "#8A8070", fontSize: "0.85em", textDecoration: "underline", cursor: "pointer", fontFamily: "inherit", marginTop: 8, padding: "8px" }}>
+              {aTrocarConta ? "A terminar sessão…" : "Iniciar sessão com outra conta"}
+            </button>
+          )}
         </div>
       </div>
     );
@@ -2364,7 +2385,7 @@ function ConviteScreen({ inviteCode, inviteCount, diasAtivos, onBack }) {
   const nextNivel = NIVEIS[NIVEIS.indexOf(nivel) + 1];
   // [DEV] Substituir pelo domínio real da Klaco. O ?ref= identifica quem convidou,
   //       para creditar automaticamente 1 mês grátis quando o convidado subscrever.
-  const link = `https://klaco.ao/entrar?ref=${inviteCode}`;
+  const link = `https://minhasfinancas-orpin.vercel.app/?ref=${inviteCode}`;
   const msgPartilha = `Descobri a Klaco — diz-me todos os dias quanto posso gastar, sem culpa. Entra pelo meu convite: ${link}`;
 
   const handleCopy = () => {
@@ -2512,12 +2533,15 @@ function ConviteScreen({ inviteCode, inviteCount, diasAtivos, onBack }) {
 }
 
 // ── MODAL DE CONQUISTA ────────────────────────────────────────────────────────
-function ConquistaModal({ nivel, diasAtivos, onPartilhar, onFechar }) {
+function ConquistaModal({ nivel, diasAtivos, inviteCode, onPartilhar, onFechar }) {
+  // [DEV] Substituir pelo domínio real da Klaco. O ?ref= identifica quem partilhou,
+  //       para creditar automaticamente quando a pessoa convidada subscrever.
+  const link = `https://minhasfinancas-orpin.vercel.app/?ref=${inviteCode}`;
   const handleWhatsApp = () => {
     const msgs = [
-      `Dia ${diasAtivos} a gastar com intenção. Sem surpresas no fim do mês. 💪`,
-      `${diasAtivos} dias e o dinheiro ainda está no lugar certo. 🔥`,
-      `Nível ${nivel.label} desbloqueado. ${diasAtivos} dias a saber exactamente o que posso gastar. ${nivel.emoji}`,
+      `Dia ${diasAtivos} a gastar com intenção. Sem surpresas no fim do mês. 💪 Experimenta também: ${link}`,
+      `${diasAtivos} dias e o dinheiro ainda está no lugar certo. 🔥 Quer saber como? ${link}`,
+      `Nível ${nivel.label} desbloqueado. ${diasAtivos} dias a saber exactamente o que posso gastar. ${nivel.emoji} Experimenta: ${link}`,
     ];
     const msg = encodeURIComponent(msgs[Math.floor(Math.random() * msgs.length)]);
     window.open(`https://wa.me/?text=${msg}`, "_blank");
@@ -2579,7 +2603,7 @@ function ConquistaModal({ nivel, diasAtivos, onPartilhar, onFechar }) {
 // ── MODAL CONVITE PÓS-PRIMEIRA-DESPESA ───────────────────────────────────────
 function ConviteMomentoModal({ inviteCode, onFechar }) {
   // [DEV] Substituir pelo domínio real da Klaco.
-  const link = `https://klaco.ao/entrar?ref=${inviteCode}`;
+  const link = `https://minhasfinancas-orpin.vercel.app/?ref=${inviteCode}`;
 
   const handleWhatsApp = () => {
     const msg = encodeURIComponent(
@@ -3085,6 +3109,53 @@ function InstalarAppModal({ deferredPrompt, onInstalado, onFechar }) {
   );
 }
 
+// ── CONVITE A PARTILHAR NO INSTAGRAM — aparece só para quem dá 4 ou 5 estrelas ──
+function PartilharInstagramModal({ onFechar }) {
+  const [copiado, setCopiado] = useState(false);
+  const INSTAGRAM_KLACO = "https://www.instagram.com/klacoapp?stkn=MThjbHhxZmh6emQ1Zg%3D%3D&utm_source=qr";
+  const legendaSugerida = "A Klaco está a ajudar-me a saber todos os dias quanto posso gastar sem culpa. 🌅 @klacoapp";
+
+  const handleCopiar = () => {
+    try { navigator.clipboard.writeText(legendaSugerida); } catch (e) {}
+    setCopiado(true);
+    setTimeout(() => setCopiado(false), 2500);
+  };
+  const handleAbrirInstagram = () => {
+    window.open(INSTAGRAM_KLACO, "_blank");
+    onFechar();
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 200, animation: "slideUp 0.25s ease" }}>
+      <div style={{ width: "100%", maxWidth: 480, background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: "24px 24px 0 0", padding: "28px 24px 40px" }}>
+        <div style={{ fontSize: "2.2em", marginBottom: 10 }}>📸</div>
+        <div style={{ fontSize: "1.1em", fontWeight: 800, color: "#E8E0D0", marginBottom: 8 }}>Que bom que estás a gostar!</div>
+        <p style={{ color: "#A09880", fontSize: "0.9em", lineHeight: 1.6, marginBottom: 20 }}>
+          Partilha a tua experiência e marca-nos: <span style={{ color: "#F59E0B", fontWeight: 700 }}>@klacoapp</span>
+        </p>
+
+        <div style={{ background: "#141414", border: "1px solid #222", borderRadius: 14, padding: "14px 16px", marginBottom: 18, fontSize: "0.85em", color: "#C8C0B0", lineHeight: 1.6 }}>
+          "{legendaSugerida}"
+        </div>
+
+        <button onClick={handleCopiar}
+          style={{ width: "100%", background: "transparent", border: "1px solid #2A2A2A", borderRadius: 14, padding: "14px", color: copiado ? "#22C55E" : "#E8E0D0", fontWeight: 700, fontSize: "0.92em", cursor: "pointer", fontFamily: "inherit", marginBottom: 10 }}>
+          {copiado ? "✓ Legenda copiada" : "Copiar legenda"}
+        </button>
+
+        <button onClick={handleAbrirInstagram} style={{ ...S.btn, marginBottom: 10 }}>
+          Abrir Instagram da Klaco
+        </button>
+
+        <button onClick={onFechar}
+          style={{ width: "100%", background: "transparent", border: "none", color: "#8A8070", fontSize: "0.85em", cursor: "pointer", fontFamily: "inherit" }}>
+          Agora não
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function AvaliacaoModal({ onEnviar, onFechar, avaliacaoAnterior }) {
   const [estrelas, setEstrelas] = useState(avaliacaoAnterior?.estrelas || 0);
   const [hover, setHover] = useState(0);
@@ -3216,6 +3287,7 @@ const INIT = {
   dicaRegistoMostrada: false, // já mostrámos a dica "regista para o número ficar certo"?
   avaliacaoTrialFeita: false, // já pedimos avaliação uma vez durante o trial?
   ultimaAvaliacao: null,      // { estrelas, texto, data } da última avaliação enviada
+  convitePartilhaInstagramVisto: false, // já viu o convite p/ partilhar no Instagram (4-5 estrelas)?
   ultimoPedidoAvaliacao: null, // data do último pedido (para espaçar depois do trial)
   comprovativoEnviado: false, // pagamento: já abriu o WhatsApp para enviar o comprovativo?
   etiquetasCustom: {}, // descrições personalizadas por categoria: { necessidades: ["..."], ... }
@@ -3636,7 +3708,7 @@ export default function App() {
   const contaPaga = state.estadoConta === "ativo" && state.acessoAte && state.acessoAte >= todayStr();
   const subscricaoExpirada = !!state.acessoAte && state.acessoAte < todayStr();
   // Bloqueio: trial gratuito esgotado OU subscrição paga expirada (ambos exigem pagar).
-  const trialExpired = state.setup && !contaLivre && !contaPaga &&
+  const trialExpired = state.setup && !isAdmin && !contaLivre && !contaPaga &&
     (subscricaoExpirada || trialDaysUsed >= TRIAL_DAYS);
 
   const handleDispensarDica = () => {
@@ -3707,6 +3779,22 @@ export default function App() {
     try { window.localStorage.removeItem("klaco_state"); } catch (e) {}
     setState(INIT);
     setScreen("auth");
+  };
+
+  // Trocar de conta a partir do ecrã de bloqueio (teste/subscrição expirados).
+  // Verifica o resultado do signOut ANTES de limpar: se falhar (ex.: sem rede), o Supabase
+  // mantém a sessão guardada e ela seria restaurada ao recarregar. Só se confirmar, reutiliza
+  // o handleLogout existente (limpa estado, cache local, userId e volta ao ecrã de autenticação).
+  const handleTrocarConta = async () => {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+    } catch (e) {
+      console.error("Erro ao terminar sessão:", e);
+      alert("Não foi possível terminar a sessão. Verifica a ligação e tenta de novo.");
+      return;
+    }
+    await handleLogout();
   };
 
   const handleSetupDone = async (data) => {
@@ -3901,19 +3989,24 @@ export default function App() {
     }
   }, [state.estadoConta, state.acessoAte, state.parabensPagamentoVisto, state.setup]);
   const [mostrarAvaliacao, setMostrarAvaliacao] = useState(false); // modal de avaliação (estrelas)
+  const [mostrarPartilhaInstagram, setMostrarPartilhaInstagram] = useState(false); // convite Instagram (4-5 estrelas)
   const [avaliacaoManual, setAvaliacaoManual] = useState(false);   // aberta pelas Definições (pode fechar sempre)
 
   const handleEnviarAvaliacao = (avaliacao) => {
     // Envia a avaliação para o Supabase (tabela "avaliacoes"): estrelas + texto.
     if (userId) enviarAvaliacaoSupabase(userId, avaliacao.estrelas, avaliacao.texto);
+    // 4 ou 5 estrelas, só uma vez: convida a partilhar a experiência no Instagram.
+    const mostrarConviteInstagram = avaliacao.estrelas >= 4 && !state.convitePartilhaInstagramVisto;
     setState(prev => ({
       ...prev,
       ultimaAvaliacao: avaliacao,
       avaliacaoTrialFeita: true,
       ultimoPedidoAvaliacao: todayStr(),
+      ...(mostrarConviteInstagram ? { convitePartilhaInstagramVisto: true } : {}),
     }));
     setMostrarAvaliacao(false);
     setAvaliacaoManual(false);
+    if (mostrarConviteInstagram) setMostrarPartilhaInstagram(true);
   };
 
   const handleFecharAvaliacao = () => {
@@ -4094,6 +4187,7 @@ export default function App() {
           planoInicial={state.planoEscolhido}
           onComprovativo={handleComprovativoEnviado}
           subscricaoExpirada={subscricaoExpirada}
+          onTrocarConta={handleTrocarConta}
         />
       </div>
     );
@@ -4198,6 +4292,7 @@ export default function App() {
         <ConquistaModal
           nivel={nivelAtual}
           diasAtivos={diasAtivos}
+          inviteCode={state.inviteCode}
           onPartilhar={() => setConquistaModal(false)}
           onFechar={() => setConquistaModal(false)}
         />
@@ -4236,6 +4331,11 @@ export default function App() {
           acessoAte={state.acessoAte}
           onFechar={() => { setMostrarParabens(false); setState(prev => ({ ...prev, parabensPagamentoVisto: true })); }}
         />
+      )}
+
+      {/* Convite a partilhar no Instagram — só para 4-5 estrelas, uma vez */}
+      {mostrarPartilhaInstagram && (
+        <PartilharInstagramModal onFechar={() => setMostrarPartilhaInstagram(false)} />
       )}
 
       {/* Bottom Navigation */}
