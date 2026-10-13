@@ -2385,7 +2385,7 @@ function ConviteScreen({ inviteCode, inviteCount, diasAtivos, onBack }) {
   const nextNivel = NIVEIS[NIVEIS.indexOf(nivel) + 1];
   // [DEV] Substituir pelo domínio real da Klaco. O ?ref= identifica quem convidou,
   //       para creditar automaticamente 1 mês grátis quando o convidado subscrever.
-  const link = `https://minhasfinancas-orpin.vercel.app/?ref=${inviteCode}`;
+  const link = `https://klaco.app/?ref=${inviteCode}`;
   const msgPartilha = `Descobri a Klaco — diz-me todos os dias quanto posso gastar, sem culpa. Entra pelo meu convite: ${link}`;
 
   const handleCopy = () => {
@@ -2536,7 +2536,7 @@ function ConviteScreen({ inviteCode, inviteCount, diasAtivos, onBack }) {
 function ConquistaModal({ nivel, diasAtivos, inviteCode, onPartilhar, onFechar }) {
   // [DEV] Substituir pelo domínio real da Klaco. O ?ref= identifica quem partilhou,
   //       para creditar automaticamente quando a pessoa convidada subscrever.
-  const link = `https://minhasfinancas-orpin.vercel.app/?ref=${inviteCode}`;
+  const link = `https://klaco.app/?ref=${inviteCode}`;
   const handleWhatsApp = () => {
     const msgs = [
       `Dia ${diasAtivos} a gastar com intenção. Sem surpresas no fim do mês. 💪 Experimenta também: ${link}`,
@@ -2603,7 +2603,7 @@ function ConquistaModal({ nivel, diasAtivos, inviteCode, onPartilhar, onFechar }
 // ── MODAL CONVITE PÓS-PRIMEIRA-DESPESA ───────────────────────────────────────
 function ConviteMomentoModal({ inviteCode, onFechar }) {
   // [DEV] Substituir pelo domínio real da Klaco.
-  const link = `https://minhasfinancas-orpin.vercel.app/?ref=${inviteCode}`;
+  const link = `https://klaco.app/?ref=${inviteCode}`;
 
   const handleWhatsApp = () => {
     const msg = encodeURIComponent(
@@ -3772,8 +3772,8 @@ export default function App() {
     setScreen("setup");
   };
 
-  const handleLogout = async () => {
-    try { await supabase.auth.signOut(); } catch (e) {}
+  // Limpeza local ao terminar a sessão (não chama o Supabase): estado, cache e ecrã de login.
+  const limparSessaoLocal = () => {
     podeGravar.current = false;
     setUserId(null);
     try { window.localStorage.removeItem("klaco_state"); } catch (e) {}
@@ -3781,10 +3781,15 @@ export default function App() {
     setScreen("auth");
   };
 
+  const handleLogout = async () => {
+    try { await supabase.auth.signOut(); } catch (e) {}
+    limparSessaoLocal();
+  };
+
   // Trocar de conta a partir do ecrã de bloqueio (teste/subscrição expirados).
-  // Verifica o resultado do signOut ANTES de limpar: se falhar (ex.: sem rede), o Supabase
-  // mantém a sessão guardada e ela seria restaurada ao recarregar. Só se confirmar, reutiliza
-  // o handleLogout existente (limpa estado, cache local, userId e volta ao ecrã de autenticação).
+  // Chama o signOut UMA só vez e verifica o resultado ANTES de limpar: se falhar (ex.: sem rede),
+  // o Supabase mantém a sessão guardada e ela seria restaurada ao recarregar. Só se confirmar,
+  // faz a limpeza local (estado, cache, userId) e volta ao ecrã de autenticação.
   const handleTrocarConta = async () => {
     try {
       const { error } = await supabase.auth.signOut();
@@ -3794,7 +3799,7 @@ export default function App() {
       alert("Não foi possível terminar a sessão. Verifica a ligação e tenta de novo.");
       return;
     }
-    await handleLogout();
+    limparSessaoLocal();
   };
 
   const handleSetupDone = async (data) => {
