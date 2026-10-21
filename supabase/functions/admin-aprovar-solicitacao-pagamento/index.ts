@@ -12,6 +12,54 @@ const cors = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+// ── VALIDAÇÃO DE PLANO E MONTANTE (início) ────────────────────────────────────
+// Preços oficiais em Kz. O servidor não confia no valor/plano enviados pelo cliente:
+// só aprova se o montante do pedido corresponder a um preço oficial do plano.
+const PRECO_MENSAL = 1000;
+const PRECO_ANUAL_DESCONTO = 10000; // anual fora do teste (2 meses grátis)
+const PRECO_ANUAL_NORMAL = 12000;   // preço de tabela do anual
+const PRECO_ANUAL_TESTE = 6000;     // anual com 50% — só durante os 7 dias de teste (como mostrado na app)
+const TRIAL_DAYS = 7;
+const TOLERANCIA_DIAS = 1 / 24;     // 1 hora, para folgas de relógio
+
+// Verifica no servidor se o pedido foi feito dentro do teste, usando perfis.trial_inicio
+// (origem oficial, protegida) e a data de criação do pedido (não a data da aprovação).
+// Devolve true/false, ou null se não houver dados para verificar.
+function pedidoDentroDoTeste(criadoEm: unknown, trialInicio: unknown): boolean | null {
+  if (!criadoEm || !trialInicio) return null;
+  const pedido = new Date(criadoEm as string).getTime();
+  const inicio = new Date(trialInicio as string).getTime();
+  if (Number.isNaN(pedido) || Number.isNaN(inicio)) return null;
+  const dias = (pedido - inicio) / 86400000;
+  return dias < TRIAL_DAYS + TOLERANCIA_DIAS;
+}
+
+function validarMontante(
+  plano: unknown,
+  valorBruto: unknown,
+  dentroDeclarado: boolean,
+  dentroVerificado: boolean | null,
+): { ok: boolean; motivo?: string } {
+  const valor = Number(valorBruto);
+  if (!Number.isInteger(valor)) return { ok: false, motivo: "Montante inválido." };
+  if (plano === "mensal") {
+    return valor === PRECO_MENSAL
+      ? { ok: true }
+      : { ok: false, motivo: `Montante ${valor} Kz incompatível com o plano mensal (${PRECO_MENSAL} Kz).` };
+  }
+  if (plano === "anual") {
+    if (valor === PRECO_ANUAL_DESCONTO || valor === PRECO_ANUAL_NORMAL) return { ok: true };
+    if (valor === PRECO_ANUAL_TESTE) {
+      // Só vale se o pedido declarou teste E o servidor não contradiz (null = sem dados: mantém o comportamento atual).
+      if (dentroDeclarado && dentroVerificado !== false) return { ok: true };
+      return { ok: false, motivo: `O montante ${valor} Kz só é válido durante o período de teste de ${TRIAL_DAYS} dias.` };
+    }
+    return { ok: false, motivo: `Montante ${valor} Kz incompatível com o plano anual.` };
+  }
+  return { ok: false, motivo: "Plano inválido." };
+}
+// ── VALIDAÇÃO DE PLANO E MONTANTE (fim) ───────────────────────────────────────
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
 
@@ -47,6 +95,27 @@ Deno.serve(async (req) => {
     const pagamento_id = body?.pagamento_id;
     if (!pagamento_id) {
       return new Response(JSON.stringify({ error: "pagamento_id em falta." }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+
+    // 4b) Validar o pedido ANTES de aprovar: tem de existir, estar pendente e ter plano/montante oficiais.
+    const { data: pag, error: pagErr } = await admin
+      .from("pagamentos").select("*").eq("id", pagamento_id).single();
+    if (pagErr || !pag) {
+      return new Response(JSON.stringify({ error: "Solicitação não encontrada." }), { status: 404, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+    if (pag.status !== "pendente") {
+      return new Response(JSON.stringify({ error: "Solicitação já não está pendente." }), { status: 409, headers: { ...cors, "Content-Type": "application/json" } });
+    }
+    const dentroDeclarado = pag.dentro_do_trial === true;
+    let dentroVerificado: boolean | null = null;
+    if (pag.plano === "anual" && Number(pag.valor) === PRECO_ANUAL_TESTE) {
+      const { data: perfilPag } = await admin
+        .from("perfis").select("trial_inicio").eq("id", pag.user_id).single();
+      dentroVerificado = pedidoDentroDoTeste(pag.criado_em ?? pag.created_at, perfilPag?.trial_inicio);
+    }
+    const validacao = validarMontante(pag.plano, pag.valor, dentroDeclarado, dentroVerificado);
+    if (!validacao.ok) {
+      return new Response(JSON.stringify({ error: `Pedido não aprovado: ${validacao.motivo}` }), { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
     // 5) Chamar a RPC de aprovação (o email do admin vem da sessão validada, não do frontend)

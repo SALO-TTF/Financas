@@ -1,6 +1,24 @@
 import { useState, useRef, useEffect } from "react";
 import { supabase, normalizarTelefone } from "./lib/supabase";
 
+// ── Origem do registo (canal de aquisição) ─────────────────────────────────────
+// URL → localStorage: guarda ?o=valor (ex.: ?o=fb, ?o=ig, ?o=inf-nome) só na 1.ª visita com origem.
+// Nunca sobrescreve uma origem já guardada e não cria nenhuma se o URL não tiver ?o=.
+const CHAVE_ORIGEM = "klaco_origem";
+function guardarOrigemDoUrl() {
+  try {
+    if (window.localStorage.getItem(CHAVE_ORIGEM)) return; // já existe: mantém
+    const bruto = new URLSearchParams(window.location.search).get("o");
+    const valor = (bruto || "").trim().toLowerCase();
+    // Só letras, números, "-" e "_" (máx. 40): valor seguro, sem tocar no resto do URL.
+    if (/^[a-z0-9_-]{1,40}$/.test(valor)) window.localStorage.setItem(CHAVE_ORIGEM, valor);
+  } catch (e) {}
+}
+function lerOrigem() {
+  try { return window.localStorage.getItem(CHAVE_ORIGEM) || null; } catch (e) { return null; }
+}
+guardarOrigemDoUrl();
+
 // ── Admin: listar utilizadores e ativar pagamento via Edge Function ────────────
 // A segurança está na Edge Function (verifica is_admin). Aqui só usamos a sessão
 // autenticada — NUNCA service_role. Não chamamos a RPC ativar_pagamento diretamente.
@@ -78,7 +96,13 @@ async function aprovarSolicitacao(pagamento_id) {
     headers: { Authorization: `Bearer ${session.access_token}` },
     body: { pagamento_id },
   });
-  if (error) { console.error("admin-aprovar-solicitacao-pagamento:", error.message || error); return { ok: false, erro: error.message || "Falha ao aprovar." }; }
+  if (error) {
+    console.error("admin-aprovar-solicitacao-pagamento:", error.message || error);
+    // Mostra o motivo enviado pelo servidor (ex.: montante inválido), quando existir.
+    let msg = error.message || "Falha ao aprovar.";
+    try { const corpo = await error.context?.json?.(); if (corpo?.error) msg = corpo.error; } catch (e) {}
+    return { ok: false, erro: msg };
+  }
   return { ok: true, data };
 }
 
@@ -138,7 +162,54 @@ async function guardarDados(userId, dados) {
     .from("perfis")
     .update({ dados, atualizado_em: new Date().toISOString() })
     .eq("id", userId);
-  if (error) console.error("guardarDados:", error.message);
+  if (error) { console.error("guardarDados:", error.message); return false; }
+  return true; // o servidor não devolveu erro: a gravação foi aceite
+}
+
+// ── Métricas: origem do registo e primeira atividade financeira ────────────────
+// Todos os UPDATE abaixo são condicionais (WHERE coluna IS NULL): nunca substituem um valor
+// já preenchido, mesmo com operações simultâneas, vários separadores ou estado desatualizado.
+const ORIGEM_VALIDA = /^[a-z0-9_-]{1,40}$/;
+
+// Origem do registo: usa a origem gravada nos metadados do Auth no momento em que a conta foi
+// criada (signInWithOtp options.data). Contas antigas não têm origem e ficam como estão.
+async function guardarOrigemRegisto(user) {
+  try {
+    const origem = user?.user_metadata?.origem;
+    if (!user?.id || typeof origem !== "string" || !ORIGEM_VALIDA.test(origem)) return;
+    const { error } = await supabase.from("perfis")
+      .update({ origem_registo: origem })
+      .eq("id", user.id)
+      .is("origem_registo", null);
+    if (error) console.error("guardarOrigemRegisto:", error.message);
+  } catch (e) { console.error("guardarOrigemRegisto:", e); }
+}
+
+// Marca a 1.ª atividade: a coluna do tipo ("gasto" | "rendimento") e a geral. Devolve true se ambas
+// as chamadas não deram erro (um UPDATE que não altera nada porque já havia data conta como sucesso).
+async function marcarPrimeiraAtividade(userId, tipo) {
+  const coluna = tipo === "gasto" ? "primeiro_gasto_em" : "primeiro_rendimento_em";
+  const agora = new Date().toISOString();
+  try {
+    const r1 = await supabase.from("perfis").update({ [coluna]: agora }).eq("id", userId).is(coluna, null);
+    const r2 = await supabase.from("perfis").update({ primeira_atividade_financeira_em: agora })
+      .eq("id", userId).is("primeira_atividade_financeira_em", null);
+    const erro = r1.error || r2.error;
+    if (erro) { console.error("marcarPrimeiraAtividade:", erro.message); return false; }
+    return true;
+  } catch (e) { console.error("marcarPrimeiraAtividade:", e); return false; }
+}
+
+// Chamada só depois de guardarDados ter sido aceite. Só marca se a operação foi a 1.ª da conta
+// (pendente) E o snapshot realmente gravado já a contém (evita gravações antigas ainda em curso).
+async function confirmarMetricas(pendentes, userId, snapshot) {
+  if (!pendentes || pendentes.uid !== userId) return;
+  if (pendentes.gasto && (snapshot?.despesas || []).length > 0) {
+    if (await marcarPrimeiraAtividade(userId, "gasto")) pendentes.gasto = false;
+  }
+  if (pendentes.rendimento && (snapshot?.entradasExtra || []).length > 0) {
+    if (await marcarPrimeiraAtividade(userId, "rendimento")) pendentes.rendimento = false;
+  }
 }
 
 // Regista uma avaliação
@@ -466,12 +537,13 @@ function AuthScreen({ onAuth }) {
     setErro("");
     if (!idValido) { setErro("Escreve um email ou número de telefone válido."); return; }
     setALigar(true);
+    const origem = lerOrigem(); // canal guardado (ou null: então não se envia nada)
     try {
       if (emailValido) {
         // Email: OTP por email (código). O Supabase cria/associa o utilizador.
         const { error } = await supabase.auth.signInWithOtp({
           email: val,
-          options: { shouldCreateUser: true },
+          options: { shouldCreateUser: true, ...(origem ? { data: { origem } } : {}) },
         });
         if (error) { setErro(traduzErro(error.message)); return; }
         setIdentGuardado(val); setEhEmail(true); setOtpEnviado(true);
@@ -480,7 +552,7 @@ function AuthScreen({ onAuth }) {
         const phone = normalizarTelefone(val);
         const { error } = await supabase.auth.signInWithOtp({
           phone,
-          options: { shouldCreateUser: true },
+          options: { shouldCreateUser: true, ...(origem ? { data: { origem } } : {}) },
         });
         if (error) { setErro(traduzErro(error.message)); return; }
         setIdentGuardado(phone); setEhEmail(false); setOtpEnviado(true);
@@ -504,6 +576,7 @@ function AuthScreen({ onAuth }) {
       if (data?.user) {
         // Garantir o perfil (o trigger já o cria; isto reforça nome/dados quando houver)
         await upsertPerfil(data.user, ehEmail ? { email: identGuardado } : { telefone: identGuardado });
+        await guardarOrigemRegisto(data.user);
         onAuth(data.user.email || data.user.phone || identGuardado, data.user);
       } else {
         setErro("Não foi possível confirmar. Tenta de novo.");
@@ -3539,6 +3612,8 @@ export default function App() {
   // SÓ permitir gravar em perfis.dados DEPOIS de o perfil ter sido carregado do Supabase.
   // Isto impede que o estado inicial vazio sobrescreva (apague) os dados já guardados.
   const podeGravar = useRef(false);
+  // 1.ª despesa / 1.º rendimento adicional desta sessão, à espera de a gravação ser confirmada.
+  const metricasPendentes = useRef({ uid: null, gasto: false, rendimento: false });
 
   // Cache local imediato (offline) sempre que o estado muda.
   useEffect(() => {
@@ -3662,7 +3737,10 @@ export default function App() {
   useEffect(() => {
     if (!userId || !podeGravar.current) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => { guardarDados(userId, state); }, 1200);
+    saveTimer.current = setTimeout(async () => {
+      const guardou = await guardarDados(userId, state);
+      if (guardou) confirmarMetricas(metricasPendentes.current, userId, state);
+    }, 1200);
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
   }, [state, userId]);
 
@@ -3775,6 +3853,7 @@ export default function App() {
   // Limpeza local ao terminar a sessão (não chama o Supabase): estado, cache e ecrã de login.
   const limparSessaoLocal = () => {
     podeGravar.current = false;
+    metricasPendentes.current = { uid: null, gasto: false, rendimento: false };
     setUserId(null);
     try { window.localStorage.removeItem("klaco_state"); } catch (e) {}
     setState(INIT);
@@ -3869,6 +3948,7 @@ export default function App() {
 
   const handleAddExpense = (expense, guardarEtiqueta) => {
     const isPrimeiraDespesa = state.despesas.length === 0;
+    if (isPrimeiraDespesa && userId) metricasPendentes.current = { ...metricasPendentes.current, uid: userId, gasto: true };
     const jaViuHoje = state.conviteDiasMostrados?.includes(trialDaysUsed);
     // Dias em que o convite proactivo aparece: dia 0 (1ª despesa), dia 3
     // Dia 7 é coberto pelo ConquistaModal (nível Consciente)
@@ -3909,6 +3989,7 @@ export default function App() {
     setState(prev => ({ ...prev, despesas: prev.despesas.filter(d => d.id !== id) }));
   };
   const handleAddEntrada = (entrada) => {
+    if ((state.entradasExtra || []).length === 0 && userId) metricasPendentes.current = { ...metricasPendentes.current, uid: userId, rendimento: true };
     setState(prev => ({ ...prev, entradasExtra: [...(prev.entradasExtra || []), entrada] }));
     setScreen("dashboard");
   };
