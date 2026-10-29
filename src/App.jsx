@@ -19,6 +19,192 @@ function lerOrigem() {
 }
 guardarOrigemDoUrl();
 
+// ── Contactos da Klaco (fonte única; evita endereços duplicados pela app) ──────
+const CONTACTOS = {
+  invoice: "invoice@klaco.app",     // pagamentos, comprovativos e faturas
+  comercial: "comercial@klaco.app", // sugestões, elogios, informação e assuntos comerciais
+  suporte: "suporte@klaco.app",     // problemas técnicos, bugs e dificuldades de utilização
+  whatsapp: "244952272299",         // internacional, para wa.me
+  whatsappTexto: "952 272 299",
+};
+
+// ── Ícones próprios (SVG de dois tons: contorno + preenchimento suave) ──────────
+// Substituem os emojis da interface: iguais em qualquer telemóvel e na cor da marca.
+const IC_F = 'fill="currentColor" fill-opacity=".2"';
+const ICONES = {
+  home: `<path d="M4 11l8-7 8 7v8.5a.5.5 0 0 1-.5.5h-15a.5.5 0 0 1-.5-.5z" ${IC_F}/><path d="M9.5 20v-5.5h5V20"/>`,
+  target: `<circle cx="12" cy="12" r="8.5" ${IC_F}/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1.1" fill="currentColor"/>`,
+  chart: `<rect x="4" y="12" width="4" height="8" rx="1.2" ${IC_F}/><rect x="10" y="7" width="4" height="13" rx="1.2" ${IC_F}/><rect x="16" y="4" width="4" height="16" rx="1.2" ${IC_F}/>`,
+  sliders: `<path d="M4 7h8M17 7h3M4 12h3M12 12h8M4 17h10M19 17h1"/><circle cx="14.5" cy="7" r="2.2" ${IC_F}/><circle cx="9.5" cy="12" r="2.2" ${IC_F}/><circle cx="16.5" cy="17" r="2.2" ${IC_F}/>`,
+  sparkle: `<path d="M12 3.5l2 5.5 5.5 2-5.5 2-2 5.5-2-5.5-5.5-2 5.5-2z" ${IC_F}/>`,
+  trend: `<path d="M3.5 17l6-6 4 4 7-7"/><path d="M15.5 8h5v5"/>`,
+  trendDown: `<path d="M3.5 7l6 6 4-4 7 7"/><path d="M15.5 16h5v-5"/>`,
+  user: `<circle cx="12" cy="8" r="4" ${IC_F}/><path d="M4.5 20c.6-3.6 3.7-5.5 7.5-5.5s6.9 1.9 7.5 5.5"/>`,
+  users: `<circle cx="9" cy="8.5" r="3.5" ${IC_F}/><path d="M2.8 19.5c.5-3.2 3.1-4.8 6.2-4.8s5.7 1.6 6.2 4.8"/><path d="M15.5 5.3a3.4 3.4 0 0 1 0 6.4M17.5 14.8c2 .5 3.3 2 3.7 4.7"/>`,
+  card: `<rect x="3" y="5.5" width="18" height="13" rx="2.5" ${IC_F}/><path d="M3 10h18"/>`,
+  list: `<rect x="5" y="3.5" width="14" height="17" rx="2.5" ${IC_F}/><path d="M9 9h6M9 13h6M9 17h3.5"/>`,
+  arrowin: `<circle cx="12" cy="12" r="8.5" ${IC_F}/><path d="M12 8v7.5M8.8 12.8L12 16l3.2-3.2"/>`,
+  tag: `<path d="M3.5 12.2V5.5a2 2 0 0 1 2-2h6.7l8.3 8.3a2 2 0 0 1 0 2.8l-5.9 5.9a2 2 0 0 1-2.8 0z" ${IC_F}/><circle cx="8" cy="8" r="1.2" fill="currentColor"/>`,
+  star: `<path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 16.9 6.8 19.7l1-5.9L3.5 9.7l5.9-.8z" ${IC_F}/>`,
+  starFull: `<path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 16.9 6.8 19.7l1-5.9L3.5 9.7l5.9-.8z" fill="currentColor"/>`,
+  chat: `<path d="M4.5 5.5h15A1.5 1.5 0 0 1 21 7v8.5a1.5 1.5 0 0 1-1.5 1.5H10l-4.5 3.5V17h-1A1.5 1.5 0 0 1 3 15.5V7a1.5 1.5 0 0 1 1.5-1.5z" ${IC_F}/>`,
+  bell: `<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z" ${IC_F}/><path d="M10 20.5a2 2 0 0 0 4 0"/>`,
+  megaphone: `<path d="M4 10v4h3l7 4V6L7 10z" ${IC_F}/><path d="M17.5 9a4 4 0 0 1 0 6"/>`,
+  chev: `<path d="M9.5 6l6 6-6 6"/>`,
+  plus: `<path d="M12 5v14M5 12h14"/>`,
+  check: `<path d="M5 12.5l4.5 4.5L19 7.5"/>`,
+  x: `<path d="M6 6l12 12M18 6L6 18"/>`,
+  pencil: `<path d="M14.5 5.5l4 4"/><path d="M4.5 19.5l1-4L16 5a2.1 2.1 0 0 1 3 3L8.5 18.5z" ${IC_F}/>`,
+  logout: `<path d="M9.5 4.5h-4A1.5 1.5 0 0 0 4 6v12a1.5 1.5 0 0 0 1.5 1.5h4"/><path d="M15 8l4 4-4 4M19 12H9.5"/>`,
+  alert: `<path d="M12 4l9 16H3z" ${IC_F}/><path d="M12 10v4.5M12 17.2v.1"/>`,
+  alertCircle: `<circle cx="12" cy="12" r="8.5" ${IC_F}/><path d="M12 8v5M12 16v.1"/>`,
+  checkCircle: `<circle cx="12" cy="12" r="8.5" ${IC_F}/><path d="M8.2 12.4l2.6 2.6 5-5.4"/>`,
+  xCircle: `<circle cx="12" cy="12" r="8.5" ${IC_F}/><path d="M9 9l6 6M15 9l-6 6"/>`,
+  hourglass: `<path d="M7 4h10M7 20h10M8 4v3.5a4 4 0 0 0 1.8 3.3L12 12l2.2-1.2A4 4 0 0 0 16 7.5V4M8 20v-3.5a4 4 0 0 1 1.8-3.3L12 12l2.2 1.2a4 4 0 0 1 1.8 3.3V20"/>`,
+  gem: `<path d="M6.5 4h11l3.5 5-9 11L3 9z" ${IC_F}/><path d="M3 9h18M9.5 4L8 9l4 11 4-11-1.5-5"/>`,
+  sprout: `<path d="M12 20v-7"/><path d="M12 13c0-3.500-2.500-5.500-6.500-5.500C5.500 11 8 13 12 13z" ${IC_F}/><path d="M12 13c0-3 2-5 6-5 0 3.500-2.200 5-6 5z" ${IC_F}/>`,
+  bulb: `<path d="M9 17.5h6M10 20.5h4"/><path d="M12 3.5a5.5 5.5 0 0 0-3.200 10c.5.4.7.9.7 1.500v.5h5V15c0-.6.2-1.100.7-1.500A5.500 5.500 0 0 0 12 3.500z" ${IC_F}/>`,
+  flame: `<path d="M12 3.5s5.500 4 5.500 9.500a5.500 5.500 0 0 1-11 0c0-2.200 1-3.700 2.200-5 .3 1.400 1.200 2.200 2 2.200C10.800 8 12 6 12 3.500z" ${IC_F}/>`,
+  flag: `<path d="M5.5 21V4.5"/><path d="M5.5 5h11l-2 4 2 4h-11z" ${IC_F}/>`,
+  gift: `<rect x="4" y="9" width="16" height="11" rx="2" ${IC_F}/><path d="M3 9h18V6H3zM12 6v14"/><path d="M12 6c-1-2.500-4.500-2.500-4 0M12 6c1-2.500 4.500-2.500 4 0"/>`,
+  award: `<circle cx="12" cy="9" r="5.500" ${IC_F}/><path d="M8.500 13.500L7 21l5-2.500 5 2.500-1.500-7.500"/>`,
+  medal: `<circle cx="12" cy="14.500" r="5.500" ${IC_F}/><path d="M8 3.500l4 6.500 4-6.500"/>`,
+  sun: `<circle cx="12" cy="12" r="4" ${IC_F}/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.600 5.600L7 7M17 17l1.400 1.400M5.600 18.400L7 17M17 7l1.400-1.400"/>`,
+  tree: `<path d="M12 3.500l5 7h-3l4 5.500H6l4-5.500H7z" ${IC_F}/><path d="M12 16v4.500"/>`,
+  briefcase: `<rect x="3.500" y="7.500" width="17" height="12" rx="2.200" ${IC_F}/><path d="M9 7.500V6a1.500 1.500 0 0 1 1.500-1.500h3A1.500 1.500 0 0 1 15 6v1.500M3.500 13h17"/>`,
+  cart: `<path d="M3.500 4.500H6l2 10h9.500l2-7H7.200"/><circle cx="9.500" cy="19" r="1.400" fill="currentColor"/><circle cx="17" cy="19" r="1.400" fill="currentColor"/>`,
+  drop: `<path d="M12 3.500s6 6.200 6 10.500a6 6 0 0 1-12 0c0-4.300 6-10.500 6-10.500z" ${IC_F}/>`,
+  fuel: `<rect x="5" y="4" width="9" height="16" rx="1.600" ${IC_F}/><path d="M5 10h9M14 8h2.500A1.500 1.500 0 0 1 18 9.500V16a1.500 1.500 0 0 0 3 0v-6l-2.500-2.500"/>`,
+  car: `<path d="M4 15l1.800-5.200A2 2 0 0 1 7.700 8.500h8.600a2 2 0 0 1 1.900 1.300L20 15v3.500h-3V17H7v1.500H4z" ${IC_F}/><circle cx="7.800" cy="14.200" r=".9" fill="currentColor"/><circle cx="16.200" cy="14.200" r=".9" fill="currentColor"/>`,
+  wifi: `<path d="M3.500 9.500a12 12 0 0 1 17 0M6.500 12.700a8 8 0 0 1 11 0M9.500 15.800a4 4 0 0 1 5 0"/><circle cx="12" cy="19" r="1.100" fill="currentColor"/>`,
+  phone: `<rect x="7" y="3" width="10" height="18" rx="2.400" ${IC_F}/><path d="M10.500 18h3"/>`,
+  pill: `<g transform="rotate(-40 12 12)"><rect x="3.500" y="8.500" width="17" height="7" rx="3.500" ${IC_F}/><path d="M12 8.500v7"/></g>`,
+  book: `<path d="M5 4.500h6.500A1.500 1.500 0 0 1 13 6v14a2 2 0 0 0-2-2H5z" ${IC_F}/><path d="M19 4.500h-5A1.500 1.500 0 0 0 12.500 6v14a2 2 0 0 1 2-2H19z" ${IC_F}/>`,
+  building: `<rect x="5" y="3.500" width="14" height="17" rx="1.600" ${IC_F}/><path d="M9 8h2M13 8h2M9 12h2M13 12h2M10.500 20.500V17h3v3.500"/>`,
+  shirt: `<path d="M8.500 4l-5 3 2 3.500 2-1V20h9V9.500l2 1 2-3.500-5-3a3.500 3.500 0 0 1-7 0z" ${IC_F}/>`,
+  dumbbell: `<path d="M6.500 8v8M17.500 8v8M3.500 10v4M20.500 10v4M6.500 12h11"/>`,
+  ticket: `<path d="M3.500 8.500a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2V10a2 2 0 0 0 0 4v1.500a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V14a2 2 0 0 0 0-4z" ${IC_F}/>`,
+  film: `<rect x="3.500" y="5" width="17" height="14" rx="2" ${IC_F}/><path d="M8 5v14M16 5v14M3.500 9H8M16 9h4.500M3.500 15H8M16 15h4.500"/>`,
+  scissors: `<circle cx="7" cy="7" r="2.500"/><circle cx="7" cy="17" r="2.500"/><path d="M9 8.600L20 19M9 15.400L20 5"/>`,
+  cross: `<rect x="3.500" y="3.500" width="17" height="17" rx="3" ${IC_F}/><path d="M12 8v8M8 12h8"/>`,
+  heart: `<path d="M12 20s-7.500-4.500-7.500-10A4.300 4.300 0 0 1 12 7.300 4.300 4.300 0 0 1 19.500 10c0 5.500-7.500 10-7.500 10z" ${IC_F}/>`,
+  plane: `<path d="M21 4.500L3 11l6 2.500 2.500 6z" ${IC_F}/><path d="M9 13.500l5-5"/>`,
+  bank: `<path d="M3.500 9L12 4l8.500 5z" ${IC_F}/><path d="M5.500 9v8M9.500 9v8M14.500 9v8M18.500 9v8M3.500 20h17"/>`,
+  globe: `<circle cx="12" cy="12" r="8.500" ${IC_F}/><path d="M3.500 12h17M12 3.500c3 2.500 3 14.500 0 17M12 3.500c-3 2.500-3 14.500 0 17"/>`,
+  shield: `<path d="M12 3.500l7 2.500v5.500c0 4.200-3 7.400-7 9-4-1.600-7-4.800-7-9V6z" ${IC_F}/>`,
+  cap: `<path d="M2.500 9.500L12 5l9.500 4.500L12 14z" ${IC_F}/><path d="M6.500 11.800V16c1.500 1.500 3.400 2.200 5.500 2.200s4-.7 5.500-2.200v-4.200M21.500 9.500v5"/>`,
+  utensils: `<path d="M7 3.500v7a2 2 0 0 0 2 2v8M5 3.500v5M9 3.500v5M17 20.500V3.500c-2.500 1.500-3.500 4-3.500 7H17"/>`,
+  cup: `<path d="M5 8h11v6a5 5 0 0 1-5 5h-1a5 5 0 0 1-5-5z" ${IC_F}/><path d="M16 9.500h1.500a2.500 2.500 0 0 1 0 5H16M8 3.500v2M11 3.500v2"/>`,
+  calendar: `<rect x="3.500" y="5" width="17" height="15" rx="2.400" ${IC_F}/><path d="M3.500 10h17M8 3.500v3M16 3.500v3"/>`,
+  refresh: `<path d="M19.500 12a7.500 7.500 0 0 1-13 5.100M4.500 12a7.500 7.500 0 0 1 13-5.100"/><path d="M17.500 3.500v3.700h-3.700M6.500 20.500v-3.700h3.700"/>`,
+  fingerprint: `<path d="M12 4a7 7 0 0 0-7 7v1.500M12 4a7 7 0 0 1 7 7v2.500c0 2.500-.5 4.500-1.500 6.500M8 11a4 4 0 0 1 8 0v2.500c0 2-.4 3.900-1.200 5.500M12 11v3.500c0 1.700-.3 3.200-.9 4.500M8 13.500c0 1.800-.3 3.600-1 5"/>`,
+  camera: `<path d="M4 8h3l1.500-2h7L17 8h3v11H4z" ${IC_F}/><circle cx="12" cy="13" r="3.400"/>`,
+  share: `<path d="M12 15V4M8 7.500L12 4l4 3.500"/><path d="M6 11H5a1.500 1.500 0 0 0-1.500 1.500v6A1.500 1.500 0 0 0 5 20h14a1.500 1.500 0 0 0 1.500-1.500v-6A1.500 1.500 0 0 0 19 11h-1"/>`,
+  wrench: `<path d="M14.500 6.500a4 4 0 0 0 4.800 5l-8.300 8.300a2.200 2.200 0 0 1-3-3l8.300-8.300a4 4 0 0 0-1.800-2z" ${IC_F}/>`,
+  unlock: `<rect x="5" y="11" width="14" height="9.500" rx="2.200" ${IC_F}/><path d="M8 11V8a4 4 0 0 1 7.700-1.500"/>`,
+};
+function Icone({ nome, size = 22, color = "currentColor", sw = 1.8, style }) {
+  const miolo = ICONES[nome];
+  if (!miolo) return null;
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={sw}
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+      style={{ color, flexShrink: 0, display: "inline-block", verticalAlign: "middle", ...style }}
+      dangerouslySetInnerHTML={{ __html: miolo }} />
+  );
+}
+// Marca da Klaco: o sol (desenhado, não emoji).
+function Sol({ size = 28, cor = "#F59E0B" }) {
+  const raios = [0, 45, 90, 135, 180, 225, 270, 315].map(a => `<line x1="12" y1="2.6" x2="12" y2="5.4" transform="rotate(${a} 12 12)"/>`).join("");
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={cor} strokeWidth="1.9" strokeLinecap="round"
+      aria-hidden="true" style={{ flexShrink: 0, display: "inline-block", verticalAlign: "middle" }}
+      dangerouslySetInnerHTML={{ __html: `<circle cx="12" cy="12" r="4.1" fill="${cor}"/>${raios}` }} />
+  );
+}
+// Os dados dos utilizadores guardam o emoji como texto (formato JSONB que não se altera):
+// este mapa mostra o ícone correspondente. Emojis desconhecidos não aparecem (ou usam `fallback`).
+const EMOJI_ICONE = {
+  "🏠": "home", "✨": "sparkle", "💎": "gem", "🌱": "sprout", "💡": "bulb", "🔥": "flame", "🦅": "flag",
+  "🎁": "gift", "💰": "award", "🏖": "sun", "🎄": "tree", "💼": "briefcase", "🛒": "cart", "💧": "drop",
+  "⛽": "fuel", "🚕": "car", "🚗": "car", "📶": "wifi", "📱": "phone", "💊": "pill", "📚": "book", "📖": "book",
+  "🏢": "building", "🏗": "building", "🧹": "sparkle", "🌳": "tree", "🛡": "shield", "🍽": "utensils", "☕": "cup",
+  "👗": "shirt", "💪": "dumbbell", "🎭": "ticket", "🎬": "film", "✂": "scissors", "🏥": "cross", "🧘": "heart",
+  "✈": "plane", "🏦": "bank", "📈": "trend", "💵": "globe", "🎓": "cap", "🥇": "medal", "💍": "gem", "🎯": "target",
+  "🏷": "tag", "📝": "pencil", "📅": "calendar", "📊": "chart", "📉": "trendDown", "🔴": "alertCircle", "⚠": "alert",
+  "🔔": "bell", "✅": "checkCircle", "❌": "xCircle", "⏳": "hourglass", "🧾": "list", "🛠": "wrench", "💬": "chat",
+  "⭐": "star", "👤": "user", "🤝": "users", "🚪": "logout", "📣": "megaphone", "⚙": "sliders", "🌅": "sun",
+  "🔓": "unlock", "🎉": "award", "🤖": "phone", "📲": "phone", "📸": "camera", "👆": "fingerprint", "🔄": "refresh",
+};
+function Emo({ e, size = 22, color = "currentColor", fallback = null, style }) {
+  const chave = EMOJI_ICONE[String(e || "").replace(/\uFE0F/g, "")] || fallback;
+  return chave ? <Icone nome={chave} size={size} color={color} style={style} /> : null;
+}
+
+// ── Datas em Africa/Luanda (evita diferenças entre UTC, navegador e servidor) ───
+const FUSO_ANGOLA = "Africa/Luanda";
+// Devolve o dia (AAAA-MM-DD) em Luanda. Aceita data simples ou timestamp.
+function dataLuanda(valor) {
+  if (!valor) return null;
+  const txt = String(valor);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(txt)) return txt;
+  const d = new Date(txt);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Intl.DateTimeFormat("en-CA", { timeZone: FUSO_ANGOLA, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+}
+const hojeLuanda = () => dataLuanda(new Date().toISOString());
+// Dias de calendário de a até b (ambos AAAA-MM-DD).
+function diasEntreDatas(a, b) {
+  const [ya, ma, da] = a.split("-").map(Number);
+  const [yb, mb, db] = b.split("-").map(Number);
+  return Math.round((Date.UTC(yb, mb - 1, db) - Date.UTC(ya, ma - 1, da)) / 86400000);
+}
+const diasDesdeLuanda = (valor) => { const ini = dataLuanda(valor); return ini ? Math.max(0, diasEntreDatas(ini, hojeLuanda())) : 0; };
+// Subscrição paga válida: estado "ativo" E validade (acesso_ate, inclusiva) não anterior a hoje em Luanda.
+const acessoPagoValido = (estado, acessoAte) => { const ate = dataLuanda(acessoAte); return estado === "ativo" && !!ate && ate >= hojeLuanda(); };
+const acessoExpirado = (acessoAte) => { const ate = dataLuanda(acessoAte); return !!ate && ate < hojeLuanda(); };
+
+// ── Notificações (tabela public.notificacoes; só leitura do utilizador + marcar como lida) ──
+const dataNotif = (n) => new Date(n.criada_em || n.criado_em || n.created_at || 0).getTime() || 0;
+
+// Devolve a lista (mais recentes primeiro) ou null se falhar (para não apagar a lista já mostrada).
+async function carregarNotificacoes(userId) {
+  try {
+    const { data, error } = await supabase.from("notificacoes").select("*").limit(100);
+    if (error) { console.error("carregarNotificacoes:", error.message); return null; }
+    // A RLS já limita às do utilizador; por precaução, se a linha trouxer user_id tem de ser o dele.
+    return (data || []).filter(n => !n.user_id || n.user_id === userId).sort((a, b) => dataNotif(b) - dataNotif(a));
+  } catch (e) { console.error("carregarNotificacoes:", e); return null; }
+}
+
+// Atualiza APENAS lida e lida_em, e só nas que ainda não estão lidas (não repõe lida_em já existente).
+async function marcarNotificacoesLidas(ids) {
+  if (!ids || ids.length === 0) return true;
+  try {
+    const { error } = await supabase.from("notificacoes")
+      .update({ lida: true, lida_em: new Date().toISOString() })
+      .in("id", ids)
+      .or("lida.is.null,lida.eq.false");
+    if (error) { console.error("marcarNotificacoesLidas:", error.message); return false; }
+    return true;
+  } catch (e) { console.error("marcarNotificacoesLidas:", e); return false; }
+}
+
+// Gera os lembretes do utilizador autenticado (Edge Function gerar-lembretes). O servidor identifica
+// o utilizador pelo token; aqui envia-se explicitamente dry_run:false. Erros nunca bloqueiam a app.
+async function executarGerarLembretes() {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) return false;
+    const { error } = await supabase.functions.invoke("gerar-lembretes", {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+      body: { dry_run: false },
+    });
+    if (error) { console.error("gerar-lembretes:", error.message || error); return false; }
+    return true;
+  } catch (e) { console.error("gerar-lembretes:", e); return false; }
+}
+
 // ── Admin: listar utilizadores e ativar pagamento via Edge Function ────────────
 // A segurança está na Edge Function (verifica is_admin). Aqui só usamos a sessão
 // autenticada — NUNCA service_role. Não chamamos a RPC ativar_pagamento diretamente.
@@ -177,39 +363,46 @@ async function guardarOrigemRegisto(user) {
   try {
     const origem = user?.user_metadata?.origem;
     if (!user?.id || typeof origem !== "string" || !ORIGEM_VALIDA.test(origem)) return;
-    const { error } = await supabase.from("perfis")
-      .update({ origem_registo: origem })
-      .eq("id", user.id)
-      .is("origem_registo", null);
-    if (error) console.error("guardarOrigemRegisto:", error.message);
+    // A coluna só se escreve pela RPC (valida o valor e só preenche se estiver vazia).
+    const { data, error } = await supabase.rpc("guardar_origem_registo", { p_origem: origem });
+    if (error) { console.error("guardarOrigemRegisto:", error.message); return; }
+    if (data?.ok !== true) console.error("guardarOrigemRegisto:", data?.codigo);
   } catch (e) { console.error("guardarOrigemRegisto:", e); }
 }
 
-// Marca a 1.ª atividade: a coluna do tipo ("gasto" | "rendimento") e a geral. Devolve true se ambas
-// as chamadas não deram erro (um UPDATE que não altera nada porque já havia data conta como sucesso).
+// Marca a 1.ª atividade ("gasto" | "rendimento") através da RPC marcar_primeira_atividade.
+// Devolve true só se o servidor confirmou; qualquer erro devolve false (a pendência mantém-se).
 async function marcarPrimeiraAtividade(userId, tipo) {
-  const coluna = tipo === "gasto" ? "primeiro_gasto_em" : "primeiro_rendimento_em";
-  const agora = new Date().toISOString();
   try {
-    const r1 = await supabase.from("perfis").update({ [coluna]: agora }).eq("id", userId).is(coluna, null);
-    const r2 = await supabase.from("perfis").update({ primeira_atividade_financeira_em: agora })
-      .eq("id", userId).is("primeira_atividade_financeira_em", null);
-    const erro = r1.error || r2.error;
-    if (erro) { console.error("marcarPrimeiraAtividade:", erro.message); return false; }
-    return true;
+    // RPC: o servidor trata da data e só preenche colunas vazias. Sucesso = "marcado" ou "ja_registado".
+    const { data, error } = await supabase.rpc("marcar_primeira_atividade", { p_tipo: tipo });
+    if (error) { console.error("marcarPrimeiraAtividade:", error.message); return false; }
+    if (data?.ok === true && (data.resultado === "marcado" || data.resultado === "ja_registado")) return true;
+    console.error("marcarPrimeiraAtividade:", data?.codigo || data);
+    return false;
   } catch (e) { console.error("marcarPrimeiraAtividade:", e); return false; }
 }
 
 // Chamada só depois de guardarDados ter sido aceite. Só marca se a operação foi a 1.ª da conta
 // (pendente) E o snapshot realmente gravado já a contém (evita gravações antigas ainda em curso).
+// Repetição segura: depois de uma falha só volta a tentar passados COOLDOWN_METRICAS_MS (não há limite de
+// tentativas, por isso nunca desiste) e nunca há duas chamadas em simultâneo. Não bloqueia gravações.
+const COOLDOWN_METRICAS_MS = 30000;
+let metricasEmCurso = false;
 async function confirmarMetricas(pendentes, userId, snapshot) {
   if (!pendentes || pendentes.uid !== userId) return;
-  if (pendentes.gasto && (snapshot?.despesas || []).length > 0) {
-    if (await marcarPrimeiraAtividade(userId, "gasto")) pendentes.gasto = false;
-  }
-  if (pendentes.rendimento && (snapshot?.entradasExtra || []).length > 0) {
-    if (await marcarPrimeiraAtividade(userId, "rendimento")) pendentes.rendimento = false;
-  }
+  const querGasto = pendentes.gasto && (snapshot?.despesas || []).length > 0;
+  const querRendimento = pendentes.rendimento && (snapshot?.entradasExtra || []).length > 0;
+  if (!querGasto && !querRendimento) return;
+  if (metricasEmCurso) return;
+  if (pendentes.aguardaAte && Date.now() < pendentes.aguardaAte) return;
+  metricasEmCurso = true;
+  try {
+    let falhou = false;
+    if (querGasto) { if (await marcarPrimeiraAtividade(userId, "gasto")) pendentes.gasto = false; else falhou = true; }
+    if (querRendimento) { if (await marcarPrimeiraAtividade(userId, "rendimento")) pendentes.rendimento = false; else falhou = true; }
+    pendentes.aguardaAte = falhou ? Date.now() + COOLDOWN_METRICAS_MS : 0;
+  } finally { metricasEmCurso = false; }
 }
 
 // Regista uma avaliação
@@ -446,12 +639,12 @@ function PinScreen({ modo, pinCorreto, biometriaAtiva, onDefinir, onEntrar, onEs
     : "Introduz o teu código";
   const sub = modo === "definir"
     ? "4 dígitos para proteger o teu acesso. Vais usá-lo para entrar."
-    : "Bem-vindo de volta 🌅";
+    : "Bem-vindo de volta";
 
   return (
     <div style={S.setup}>
       <div style={{ ...S.setupCard, textAlign: "center" }}>
-        <div style={{ fontSize: "2.5em", marginBottom: 8 }}>🌅</div>
+        <div style={{ marginBottom: 8 }}><Sol size={44} /></div>
         <div style={{ ...S.logo, fontSize: "1.1em", marginBottom: 6 }}>{titulo}</div>
         <p style={{ color: "#A09880", fontSize: "0.86em", marginBottom: 24 }}>{sub}</p>
 
@@ -475,9 +668,7 @@ function PinScreen({ modo, pinCorreto, biometriaAtiva, onDefinir, onEntrar, onEs
           {/* Biometria (só no modo entrar e se ativa) */}
           {modo === "entrar" && biometriaAtiva ? (
             <button onClick={onBiometria}
-              style={{ aspectRatio: "1", background: "transparent", border: "none", cursor: "pointer", fontSize: "1.6em" }}>
-              👆
-            </button>
+              style={{ aspectRatio: "1", background: "transparent", border: "none", cursor: "pointer", fontSize: "1.6em" }}><Icone nome="fingerprint" size={30} color="#F59E0B" /></button>
           ) : <div />}
           <button onClick={() => premir("0")}
             style={{ aspectRatio: "1", background: "#0D0D0D", border: "1px solid #1E1E1E", borderRadius: "50%", color: "#E8E0D0", fontSize: "1.4em", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
@@ -603,7 +794,7 @@ function AuthScreen({ onAuth }) {
   return (
     <div style={S.setup}>
       <div style={S.setupCard}>
-        <div style={S.logo}>☀️ Klaco</div>
+        <div style={{ ...S.logo, display: "flex", alignItems: "center", gap: 8 }}><Sol size={24} /> Klaco</div>
 
         {modo === "inicio" && !otpEnviado && (
           <>
@@ -724,7 +915,7 @@ function SetupScreen({ onComplete }) {
           />
           {nome.trim().length >= 2 && (
             <div style={{ marginTop: 16, fontSize: "0.92em", color: "#8A8070", textAlign: "center" }}>
-              Olá, <span style={{ color: "#F59E0B", fontWeight: 700 }}>{primeiroNome}</span> 👋
+              Olá, <span style={{ color: "#F59E0B", fontWeight: 700 }}>{primeiroNome}</span>
             </div>
           )}
         </div>
@@ -757,13 +948,13 @@ function SetupScreen({ onComplete }) {
               </div>
               {CATS.map(c => (
                 <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#0D0D0D", border: "1px solid #161616", borderRadius: 12, padding: "12px 16px" }}>
-                  <span style={{ color: "#A09880", fontSize: "0.92em" }}>{c.emoji} {c.label}</span>
+                  <span style={{ color: "#A09880", fontSize: "0.92em", display: "inline-flex", alignItems: "center", gap: 6 }}><Emo e={c.emoji} size={16} color={c.color} /> {c.label}</span>
                   <span style={{ color: c.color, fontWeight: 700, fontSize: "0.95em" }}>
                     {fmtKz(sal * DEFAULT_PCT[c.id] / 100)}
                   </span>
                 </div>
               ))}
-              <div style={{ fontSize: "0.78em", color: "#6A6050", textAlign: "center", marginTop: 4 }}>
+              <div style={{ fontSize: "0.78em", color: "#9F9582", textAlign: "center", marginTop: 4 }}>
                 Podes ajustar estas percentagens nas Definições
               </div>
 
@@ -782,13 +973,13 @@ function SetupScreen({ onComplete }) {
                 </div>
                 {rendimentoVariavel && (
                   <div style={{ fontSize: "0.75em", color: "#8A8070", marginTop: 8, lineHeight: 1.5 }}>
-                    🌅 Sempre que receberes, vamos perguntar-te quanto recebeste desta vez, para o teu número ficar certo.
+                    Sempre que receberes, vamos perguntar-te quanto recebeste desta vez, para o teu número ficar certo.
                   </div>
                 )}
               </div>
             </div>
           ) : (
-            <div style={{ marginTop: 24, fontSize: "0.88em", color: "#6A6050", textAlign: "center", lineHeight: 1.6 }}>
+            <div style={{ marginTop: 24, fontSize: "0.88em", color: "#9F9582", textAlign: "center", lineHeight: 1.6 }}>
               A partir deste valor calculamos quanto podes gastar cada dia sem surpresas no fim do mês
             </div>
           )}
@@ -811,7 +1002,7 @@ function SetupScreen({ onComplete }) {
               padding: "12px 14px", cursor: "pointer", fontFamily: "inherit", textAlign: "left",
             }}>
             <div style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${semEntradaInicial ? "#F59E0B" : "#444"}`, background: semEntradaInicial ? "#F59E0B" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              {semEntradaInicial && <span style={{ color: "#000", fontWeight: 800, fontSize: "0.8em" }}>✓</span>}
+              {semEntradaInicial && <Icone nome="check" size={14} color="#000" sw={3} />}
             </div>
             <span style={{ fontSize: "0.85em", color: "#E8E0D0" }}>Comecei agora — ainda não recebi nenhum pagamento</span>
           </button>
@@ -829,19 +1020,19 @@ function SetupScreen({ onComplete }) {
               onChange={e => setProximoPagamento(e.target.value)} style={S.dateInput} />
             {proximoPagamento && proximoPagamento <= todayStr() && (
               <div style={{ fontSize: "0.82em", color: "#EF4444", marginTop: 8 }}>
-                ⚠️ A data tem de ser no futuro
+                <Icone nome="alert" size={15} style={{ marginRight: 6 }} />A data tem de ser no futuro
               </div>
             )}
             {datasValidas && (
               <div style={{ fontSize: "0.82em", color: "#22C55E", marginTop: 8 }}>
-                ✓ {daysUntil(proximoPagamento)} dias até ao pagamento
+                <Icone nome="check" size={15} style={{ marginRight: 6 }} />{daysUntil(proximoPagamento)} dias até ao pagamento
               </div>
             )}
           </div>
 
           {semEntradaInicial && (
             <div style={{ background: "#141000", border: "1px solid #2A2010", borderRadius: 12, padding: "12px 14px", fontSize: "0.82em", color: "#C8C0B0", lineHeight: 1.55 }}>
-              🌅 Como ainda não recebeste, vamos calcular o teu dia a dia a partir do teu primeiro pagamento. Até lá, o teu número será associado a essa data.
+              Como ainda não recebeste, vamos calcular o teu dia a dia a partir do teu primeiro pagamento. Até lá, o teu número será associado a essa data.
             </div>
           )}
         </div>
@@ -854,7 +1045,7 @@ function SetupScreen({ onComplete }) {
   return (
     <div style={S.setup}>
       <div style={S.setupCard}>
-        <div style={S.logo}>☀️ Klaco</div>
+        <div style={{ ...S.logo, display: "flex", alignItems: "center", gap: 8 }}><Sol size={24} /> Klaco</div>
 
         {/* Dots de progresso — visíveis */}
         <div style={S.stepDots}>
@@ -867,7 +1058,7 @@ function SetupScreen({ onComplete }) {
               }} />
             </div>
           ))}
-          <div style={{ fontSize: "0.78em", color: "#6A6050", marginLeft: 6 }}>
+          <div style={{ fontSize: "0.78em", color: "#9F9582", marginLeft: 6 }}>
             {step + 1} de {steps.length}
           </div>
         </div>
@@ -879,17 +1070,17 @@ function SetupScreen({ onComplete }) {
 
         {/* Botão inactivo explica o que falta */}
         {!cur.valid && step === 0 && nome.trim().length < 2 && (
-          <div style={{ fontSize: "0.82em", color: "#6A6050", textAlign: "center", marginBottom: 10 }}>
+          <div style={{ fontSize: "0.82em", color: "#9F9582", textAlign: "center", marginBottom: 10 }}>
             Escreve o teu nome para continuar
           </div>
         )}
         {!cur.valid && step === 1 && sal === 0 && (
-          <div style={{ fontSize: "0.82em", color: "#6A6050", textAlign: "center", marginBottom: 10 }}>
+          <div style={{ fontSize: "0.82em", color: "#9F9582", textAlign: "center", marginBottom: 10 }}>
             Escreve o teu rendimento para continuar
           </div>
         )}
         {!cur.valid && step === 2 && !datasValidas && (
-          <div style={{ fontSize: "0.82em", color: "#6A6050", textAlign: "center", marginBottom: 10 }}>
+          <div style={{ fontSize: "0.82em", color: "#9F9582", textAlign: "center", marginBottom: 10 }}>
             {!proximoPagamento ? "Indica a data do próximo pagamento" : "A data tem de ser no futuro"}
           </div>
         )}
@@ -908,7 +1099,7 @@ function SetupScreen({ onComplete }) {
             }}
             style={{ ...S.btn, opacity: cur.valid ? 1 : 0.35, flex: 1 }}
           >
-            {step < steps.length - 1 ? "Continuar →" : "Ver quanto posso gastar 🚀"}
+            {step < steps.length - 1 ? "Continuar →" : "Ver quanto posso gastar"}
           </button>
         </div>
       </div>
@@ -917,7 +1108,53 @@ function SetupScreen({ onComplete }) {
 }
 
 // ── DASHBOARD ─────────────────────────────────────────────────────────────────
-function DashboardScreen({ state, onAddExpense, onAddEntrada, onOpenCharts, onOpenGoals, onOpenConvite }) {
+// Valor do dia em destaque: inteiros grandes, decimais mais pequenos e "Kz" na cor da marca.
+function ValorHero({ texto, corUnidade }) {
+  const m = String(texto).match(/^(.*?)(,\d{2})\s*Kz$/);
+  if (!m) return <span>{texto}</span>;
+  return (
+    <span>
+      {m[1]}<span style={{ fontSize: "0.58em", opacity: 0.7 }}>{m[2]}</span>{" "}
+      <span style={{ fontSize: "0.5em", color: corUnidade, fontWeight: 800 }}>Kz</span>
+    </span>
+  );
+}
+
+// Cartão "Pagar já": sempre visível no topo do Início durante o teste. Começa discreto e ganha
+// urgência perto do fim (2 dias: mais forte; último dia: vermelho). Só apresentação.
+function BannerPagarJa({ dias, onPagar }) {
+  const ultimo = dias <= 1, perto = dias === 2;
+  const rgb = ultimo ? "239,68,68" : "245,158,11";
+  const cor = ultimo ? "#EF4444" : "#F59E0B";
+  const titulo = ultimo ? "Hoje é o último dia" : perto ? "Teste termina em 2 dias" : "Paga já e poupa 50%";
+  const sub = ultimo ? "Paga hoje e poupa 50%" : perto ? "Paga já e poupa 50%" : "Só até ao fim do teste";
+  const r = 18, circ = 2 * Math.PI * r, frac = Math.max(0, Math.min(1, dias / TRIAL_DAYS));
+  return (
+    <div style={{ margin: "6px 16px 0", minHeight: 68, borderRadius: 18, display: "flex", alignItems: "center", gap: 12, padding: "10px 12px",
+      background: `linear-gradient(120deg,rgba(${rgb},${perto || ultimo ? 0.28 : 0.20}),rgba(${rgb},0.07))`, border: `1px solid rgba(${rgb},${perto || ultimo ? 0.6 : 0.42})` }}>
+      <div style={{ position: "relative", width: 46, height: 46, flexShrink: 0 }}>
+        <svg width="46" height="46" viewBox="0 0 46 46" style={{ transform: "rotate(-90deg)" }}>
+          <circle cx="23" cy="23" r={r} fill="none" stroke="rgba(255,255,255,0.10)" strokeWidth="4" />
+          <circle cx="23" cy="23" r={r} fill="none" stroke={cor} strokeWidth="4" strokeLinecap="round" strokeDasharray={`${circ * frac} ${circ}`} />
+        </svg>
+        <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", lineHeight: 1 }}>
+          <div style={{ fontSize: "1em", fontWeight: 800, color: "#F2EBDD" }}>{dias}</div>
+          <div style={{ fontSize: "0.5em", fontWeight: 700, color: "#BDB3A0", marginTop: 1, letterSpacing: "0.04em" }}>{dias === 1 ? "DIA" : "DIAS"}</div>
+        </div>
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: "0.92em", fontWeight: 800, color: "#F2EBDD" }}>{titulo}</div>
+        <div style={{ fontSize: "0.76em", color: "#CFC6B4", marginTop: 2 }}>{sub}</div>
+      </div>
+      <button onClick={onPagar}
+        style={{ height: 38, padding: "0 16px", borderRadius: 19, background: cor, color: ultimo ? "#fff" : "#1A1203", border: "none", fontWeight: 800, fontSize: 14, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>
+        Pagar já
+      </button>
+    </div>
+  );
+}
+
+function DashboardScreen({ state, onAddExpense, onAddEntrada, onOpenCharts, onOpenGoals, onOpenConvite, notifNaoLidas = 0, onAbrirNotificacoes, bannerPagar }) {
   const { salario, dataRecebimento, proximoPagamento, despesas, pct, objectivos = [], entradasExtra = [], semEntradaInicial = false } = state;
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [showComoCalcula, setShowComoCalcula] = useState(false);
@@ -984,51 +1221,59 @@ function DashboardScreen({ state, onAddExpense, onAddEntrada, onOpenCharts, onOp
   return (
     <div style={S.screen}>
       {/* Header */}
-      <div style={S.header}>
-        <div>
-          <div style={S.logo}>
-            {state.nome
-              ? `Olá, ${state.nome.split(" ")[0]} 👋`
-              : "☀️ Klaco"}
-          </div>
-          <div style={S.headerSub}>o teu dinheiro. a tua liberdade.</div>
+      <div style={{ ...S.header, paddingBottom: 6 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Sol size={28} />
+          <div style={{ fontSize: "1.3em", fontWeight: 800, color: "#F59E0B", letterSpacing: "-0.01em" }}>Klaco</div>
         </div>
-
+        {onAbrirNotificacoes && (
+          <button onClick={onAbrirNotificacoes} aria-label="Notificações"
+            style={{ position: "relative", background: "#101010", border: "1px solid #1E1E1E", borderRadius: "50%", width: 42, height: 42, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>
+            <Icone nome="bell" size={21} color="#E8E0D0" />
+            {notifNaoLidas > 0 && (
+              <span style={{ position: "absolute", top: -4, right: -4, minWidth: 18, height: 18, borderRadius: 9, background: "#EF4444", color: "#fff", fontSize: "0.62em", fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px" }}>
+                {notifNaoLidas > 9 ? "9+" : notifNaoLidas}
+              </span>
+            )}
+          </button>
+        )}
       </div>
+
+      {bannerPagar}
 
       {/* Hero */}
       <div style={{
         ...S.heroCard,
         background: heroPositive
-          ? "linear-gradient(135deg,#1C1400,#0F0C00)"
-          : "linear-gradient(135deg,#1A0800,#100500)",
-        borderColor: heroPositive ? "rgba(245,158,11,0.2)" : "rgba(239,68,68,0.25)",
+          ? "linear-gradient(160deg,rgba(245,158,11,0.16),rgba(245,158,11,0.03) 60%)"
+          : "linear-gradient(160deg,rgba(239,68,68,0.16),rgba(239,68,68,0.03) 60%)",
+        borderColor: heroPositive ? "rgba(245,158,11,0.30)" : "rgba(239,68,68,0.35)",
       }}>
         {aguardaPrimeiroPagamento ? (
           <>
-            <div style={{ ...S.heroLabel, color: "#F59E0B" }}>O TEU PRIMEIRO PAGAMENTO ESTÁ A CHEGAR</div>
-            <div style={{ ...S.heroAmount, color: "#F59E0B", fontSize: "2.2em" }}>Em breve 🌅</div>
-            <div style={{ ...S.heroSub, color: "#A08850", lineHeight: 1.5 }}>
+            <div style={{ ...S.heroLabel, color: "#F5C46B" }}>O TEU PRIMEIRO PAGAMENTO ESTÁ A CHEGAR</div>
+            <div style={{ ...S.heroAmount, color: "#F2EBDD", fontSize: "2.2em" }}>Em breve</div>
+            <div style={{ ...S.heroSub, color: "#BDB3A0", lineHeight: 1.5 }}>
               A partir de {dataPrimeiroFmt}, vais saber exactamente quanto podes gastar todos os dias.
             </div>
             <div style={S.heroDivider} />
-            <div style={{ fontSize: "0.85em", color: "#8A8070", lineHeight: 1.5 }}>
-              Faltam {diasRestantes} dia{diasRestantes !== 1 ? "s" : ""}. Até lá, podes ir conhecendo a Klaco. 👇
+            <div style={{ fontSize: "0.85em", color: "#BDB3A0", lineHeight: 1.5 }}>
+              Faltam {diasRestantes} dia{diasRestantes !== 1 ? "s" : ""}. Até lá, podes ir conhecendo a Klaco.
             </div>
           </>
         ) : (
           <>
-            <div style={{ ...S.heroLabel, color: heroPositive ? "#F59E0B" : "#EF4444" }}>
+            <div style={{ ...S.heroLabel, color: heroPositive ? "#F5C46B" : "#F87171" }}>
               {gastoDiario >= 0 ? "PODES GASTAR HOJE" : "LIMITE DIÁRIO EXCEDIDO"}
             </div>
-            <button onClick={() => setShowComoCalcula(true)}
-              style={{ background: "transparent", border: "none", cursor: "pointer", fontFamily: "inherit", padding: 0, display: "block", width: "100%" }}>
-              <div style={{ ...S.heroAmount, color: heroPositive ? "#F59E0B" : "#EF4444" }}>
-                {gastoDiario >= 0 ? fmtKz(gastoDiario) : `−${fmtKz(Math.abs(gastoDiario))}`}
-                <span style={{ fontSize: "0.35em", color: "#6A6050", marginLeft: 8, verticalAlign: "middle" }}>ⓘ</span>
+            <button onClick={() => setShowComoCalcula(true)} aria-label="Como calculamos o teu número"
+              style={{ background: "transparent", border: "none", cursor: "pointer", fontFamily: "inherit", padding: 0, display: "block", width: "100%", textAlign: "left" }}>
+              <div style={{ ...S.heroAmount, color: heroPositive ? "#F2EBDD" : "#F87171", display: "flex", alignItems: "center", flexWrap: "wrap", gap: "0 12px" }}>
+                <ValorHero texto={gastoDiario >= 0 ? fmtKz(gastoDiario) : `−${fmtKz(Math.abs(gastoDiario))}`} corUnidade={heroPositive ? "#F59E0B" : "#F87171"} />
+                <span aria-hidden="true" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 24, height: 24, borderRadius: "50%", border: "1.8px solid #F5C46B", color: "#F5C46B", font: "italic 700 15px Georgia, serif", flexShrink: 0 }}>i</span>
               </div>
             </button>
-            <div style={{ ...S.heroSub, color: heroPositive ? "#A08850" : "#C06040" }}>
+            <div style={{ ...S.heroSub, color: heroPositive ? "#BDB3A0" : "#F0A090" }}>
               {gastoDiario >= 0
                 ? `${diasRestantes} dias até ao próximo pagamento`
                 : `Precisas de compensar nos próximos ${diasRestantes} dias`}
@@ -1037,11 +1282,11 @@ function DashboardScreen({ state, onAddExpense, onAddEntrada, onOpenCharts, onOp
             <div style={S.heroRow}>
               <div>
                 <div style={S.heroSmallLabel}>Sobra este mês</div>
-                <div style={{ ...S.heroSmall, color: saldo >= 0 ? "#C8A040" : "#EF4444" }}>{fmtKz(saldo)}</div>
+                <div style={{ ...S.heroSmall, color: saldo >= 0 ? "#F2EBDD" : "#EF4444" }}>{fmtKz(saldo)}</div>
               </div>
               <div style={{ textAlign: "right" }}>
                 <div style={S.heroSmallLabel}>Já gastaste</div>
-                <div style={{ ...S.heroSmall, color: "#6A6050" }}>{fmtKz(totalGasto)}</div>
+                <div style={{ ...S.heroSmall, color: "#F2EBDD" }}>{fmtKz(totalGasto)}</div>
               </div>
             </div>
           </>
@@ -1049,7 +1294,7 @@ function DashboardScreen({ state, onAddExpense, onAddEntrada, onOpenCharts, onOp
       </div>
 
       {/* Categories */}
-      <div style={S.sectionLabel}>DISTRIBUIÇÃO {Object.values(pct).join(" · ")}</div>
+      <div style={{ ...S.sectionLabel, display: "flex", justifyContent: "space-between" }}><span>DISTRIBUIÇÃO</span><span>{CATS.map(c => pct[c.id]).join(" · ")}</span></div>
       <div style={S.categoryList}>
         {CATS.map(c => {
           const gasto = gastosPorCat[c.id];
@@ -1067,69 +1312,73 @@ function DashboardScreen({ state, onAddExpense, onAddEntrada, onOpenCharts, onOp
           const hojeCat = diasRestantes > 0 ? restanteAjustadoCat / diasRestantes : restanteAjustadoCat;
           return (
             <div key={c.id} style={S.categoryCard}>
-              <div style={S.catHeader}>
-                <span style={S.catEmoji}>{c.emoji}</span>
-                <div style={{ flex: 1 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ width: 40, height: 40, borderRadius: 12, background: `${c.color}22`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <Emo e={c.emoji} size={22} color={c.color} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={S.catName}>{c.label}</div>
+                  {aguardaPrimeiroPagamento
+                    ? <div style={{ fontSize: "0.8em", color: "#9F9582", fontWeight: 600, marginTop: 2 }}>Em breve saberás</div>
+                    : over
+                    ? <div style={{ ...S.overAlert, marginTop: 2, display: "flex", alignItems: "center", gap: 5 }}><Icone nome="alert" size={14} />Excedeste em {fmtKz(totalUsado - orc)}</div>
+                    : <div style={{ fontSize: "0.8em", color: "#22C55E", fontWeight: 600, marginTop: 2 }}>{fmtKz(restante)} disponível</div>}
                 </div>
                 <div style={{ textAlign: "right" }}>
                   {aguardaPrimeiroPagamento ? (
-                    <div style={{ color: "#8A8070", fontWeight: 700, fontSize: "0.85em" }}>em breve</div>
-                  ) : (
+                    <div style={{ color: "#9F9582", fontWeight: 700, fontSize: "0.85em" }}>em breve</div>
+                  ) : (diasRestantes > 0 && hojeCat > 0) ? (
                     <>
-                      <div style={{ color: over ? "#EF4444" : c.color, fontWeight: 700, fontSize: "0.9em" }}>
-                        {fmtKz(gasto)}
-                        {reservado > 0 && <span style={{ fontSize: "0.75em", color: "#F59E0B", display: "block" }}>+ {fmtKz(reservado)} obj.</span>}
-                      </div>
-                      <div style={S.catLimit}>/ {fmtKz(orc)} ({pct[c.id]}%)</div>
+                      <div style={{ fontSize: "0.66em", color: "#9F9582", fontWeight: 700, letterSpacing: "0.06em" }}>HOJE</div>
+                      <div style={{ fontSize: "0.95em", fontWeight: 800, color: "#F2EBDD" }}>{fmtKz(hojeCat)}</div>
                     </>
-                  )}
+                  ) : null}
                 </div>
               </div>
-              <div style={S.barBg}>
+              <div style={{ ...S.barBg, marginTop: 12 }}>
                 <div style={{ ...S.barFill, width: `${aguardaPrimeiroPagamento ? 0 : pctUsed}%`, background: over ? "#EF4444" : c.color }} />
               </div>
-              {aguardaPrimeiroPagamento
-                ? <div style={{ fontSize: "0.82em", color: "#8A8070", marginTop: 8, fontWeight: 600 }}>🌅 Em breve saberás</div>
-                : over
-                ? <div style={S.overAlert}>⚠️ Excedeste em {fmtKz(totalUsado - orc)}</div>
-                : <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
-                    <span style={{ fontSize: "0.82em", color: "#22C55E", fontWeight: 600 }}>
-                      ✓ {fmtKz(restante)} disponível
-                    </span>
-                    {diasRestantes > 0 && hojeCat > 0 && (
-                      <span style={{ fontSize: "0.75em", color: "#8A8070" }}>
-                        hoje: {fmtKz(hojeCat)}
-                      </span>
-                    )}
-                  </div>
-              }
+              {!aguardaPrimeiroPagamento && (
+                <div style={{ fontSize: "0.75em", color: "#9F9582", marginTop: 8 }}>
+                  {fmtKz(gasto)}{reservado > 0 ? ` + ${fmtKz(reservado)} obj.` : ""} de {fmtKz(orc)} ({pct[c.id]}%)
+                </div>
+              )}
             </div>
           );
         })}
       </div>
 
-      {/* Botão único com lista pendente: Despesa ou Entrada */}
-      <div style={{ padding: "0 16px 100px" }}>
-        {!showAddMenu ? (
-          <button onClick={() => setShowAddMenu(true)} style={S.addBtn}>+ Adicionar</button>
-        ) : (
-          <div style={{ background: "#0D0D0D", border: "1px solid #F59E0B40", borderRadius: 14, overflow: "hidden", animation: "slideUp 0.2s ease" }}>
-            <button onClick={() => { setShowAddMenu(false); onAddExpense(); }}
-              style={{ width: "100%", background: "transparent", border: "none", borderBottom: "1px solid #1A1A1A", padding: "16px", color: "#E8E0D0", fontWeight: 700, fontSize: "0.95em", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 10, textAlign: "left" }}>
-              <span style={{ fontSize: "1.2em" }}>🛒</span> Novo registo (gasto ou investimento)
-            </button>
-            <button onClick={() => { setShowAddMenu(false); onAddEntrada(); }}
-              style={{ width: "100%", background: "transparent", border: "none", borderBottom: "1px solid #1A1A1A", padding: "16px", color: "#E8E0D0", fontWeight: 700, fontSize: "0.95em", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 10, textAlign: "left" }}>
-              <span style={{ fontSize: "1.2em" }}>💰</span> Adicionar uma entrada (salário extra, 13º, bónus)
-            </button>
+      {/* Botão fixo "Adicionar": abre a escolha entre gasto e entrada (como antes) */}
+      {!showAddMenu && (
+        <button onClick={() => setShowAddMenu(true)} aria-label="Adicionar"
+          style={{ position: "fixed", right: "max(18px, calc(50% - 222px))", bottom: "calc(100px + env(safe-area-inset-bottom, 0px))", zIndex: 90, height: 54, padding: "0 22px 0 16px", borderRadius: 27, background: "#F59E0B", border: "none", color: "#1A1203", fontWeight: 800, fontSize: 15, display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 8px 24px rgba(245,158,11,0.35)" }}>
+          <Icone nome="plus" size={22} color="#1A1203" sw={2.4} /> Adicionar
+        </button>
+      )}
+      {showAddMenu && (
+        <div onClick={() => setShowAddMenu(false)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 150, display: "flex", alignItems: "flex-end", justifyContent: "center", animation: "slideUp 0.2s ease" }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ width: "100%", maxWidth: 480, background: "#0D0D0D", border: "1px solid #1C1C1C", borderRadius: "24px 24px 0 0", padding: "20px 16px calc(24px + env(safe-area-inset-bottom, 0px))" }}>
+            {[
+              { ic: "cart", txt: "Novo registo (gasto ou investimento)", fn: onAddExpense },
+              { ic: "arrowin", txt: "Adicionar uma entrada (salário extra, 13º, bónus)", fn: onAddEntrada },
+            ].map(op => (
+              <button key={op.ic} onClick={() => { setShowAddMenu(false); op.fn(); }}
+                style={{ width: "100%", background: "#101010", border: "1px solid #1C1C1C", borderRadius: 14, padding: "14px 16px", marginBottom: 10, color: "#F2EBDD", fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 12, textAlign: "left" }}>
+                <span style={{ width: 36, height: 36, borderRadius: 11, background: "rgba(245,158,11,0.12)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <Icone nome={op.ic} size={20} color="#F59E0B" />
+                </span>
+                {op.txt}
+              </button>
+            ))}
             <button onClick={() => setShowAddMenu(false)}
-              style={{ width: "100%", background: "transparent", border: "none", padding: "13px", color: "#8A8070", fontSize: "0.85em", cursor: "pointer", fontFamily: "inherit" }}>
+              style={{ width: "100%", background: "transparent", border: "none", padding: "12px", color: "#BDB3A0", fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
               Cancelar
             </button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Modal: como é calculado o número */}
       {showComoCalcula && (
@@ -1137,16 +1386,15 @@ function DashboardScreen({ state, onAddExpense, onAddEntrada, onOpenCharts, onOp
           style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 24, animation: "slideUp 0.2s ease" }}>
           <div onClick={e => e.stopPropagation()}
             style={{ width: "100%", maxWidth: 420, background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: 20, padding: "26px 22px" }}>
-            <div style={{ fontSize: "1.6em", marginBottom: 10 }}>🌅</div>
-            <div style={{ fontSize: "1.1em", fontWeight: 800, color: "#E8E0D0", marginBottom: 14 }}>Como calculamos o teu número</div>
-            <p style={{ fontSize: "0.9em", color: "#C8C0B0", lineHeight: 1.65, marginBottom: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+              <Sol size={28} />
+              <div style={{ fontSize: "1.1em", fontWeight: 800, color: "#F2EBDD", lineHeight: 1.25 }}>Como calculamos o teu número</div>
+            </div>
+            <p style={{ fontSize: "0.92em", color: "#C8C0B0", lineHeight: 1.65, marginBottom: 18 }}>
               Pegamos no que tens para este período, tiramos o que já gastaste, e dividimos pelos dias que faltam até ao próximo pagamento.
             </p>
-            <div style={{ background: "#0A0A0A", border: "1px solid #1A1A1A", borderRadius: 12, padding: "14px 16px", fontSize: "0.85em", color: "#A09880", lineHeight: 1.6, marginBottom: 16 }}>
-              O que tens, menos o que já gastaste, a dividir pelos dias que faltam. É o que podes gastar hoje sem ficar sem nada.
-            </div>
-            <p style={{ fontSize: "0.88em", color: "#F59E0B", fontWeight: 600, lineHeight: 1.5, marginBottom: 18 }}>
-              Quanto mais registas o que gastas, mais certo fica o teu número. 🌅
+            <p style={{ fontSize: "0.92em", color: "#F59E0B", fontWeight: 700, lineHeight: 1.55, marginBottom: 22 }}>
+              Regista sempre gastos e entradas.<br />O número fica mais certo.
             </p>
             <button onClick={() => setShowComoCalcula(false)} style={S.btn}>Percebi</button>
           </div>
@@ -1168,11 +1416,11 @@ function EtiquetasScreen({ etiquetasCustom = {}, onDelete, onBack }) {
       </div>
       <div style={{ padding: "0 16px" }}>
         <p style={{ fontSize: "0.85em", color: "#8A8070", lineHeight: 1.6, marginBottom: 20 }}>
-          Estas são as descrições que guardaste. Aparecem como sugestão quando lanças uma despesa, para não teres de escrever sempre o mesmo. 🏷️
+          Estas são as descrições que guardaste. Aparecem como sugestão quando lanças uma despesa, para não teres de escrever sempre o mesmo.
         </p>
         {!temAlguma && (
-          <div style={{ textAlign: "center", padding: "40px 20px", color: "#6A6050" }}>
-            <div style={{ fontSize: "2.5em", marginBottom: 12 }}>🏷️</div>
+          <div style={{ textAlign: "center", padding: "40px 20px", color: "#9F9582" }}>
+            <div style={{ marginBottom: 12 }}><Icone nome="tag" size={44} color="#9F9582" /></div>
             <div style={{ fontSize: "0.9em", lineHeight: 1.6 }}>
               Ainda não guardaste nenhuma etiqueta.<br />
               Quando lançares uma despesa com um nome novo, podes guardá-lo aqui.
@@ -1185,7 +1433,7 @@ function EtiquetasScreen({ etiquetasCustom = {}, onDelete, onBack }) {
           return (
             <div key={cat.id} style={{ marginBottom: 24 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                <span style={{ fontSize: "1.1em" }}>{cat.emoji}</span>
+                <Emo e={cat.emoji} size={20} color={cat.color || "#F59E0B"} />
                 <span style={{ fontSize: "0.8em", fontWeight: 700, color: cat.color, letterSpacing: "0.04em" }}>{cat.label.toUpperCase()}</span>
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -1193,9 +1441,7 @@ function EtiquetasScreen({ etiquetasCustom = {}, onDelete, onBack }) {
                   <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, background: "#0F0F0F", border: "1px solid #1E1E1E", borderRadius: 20, padding: "8px 12px 8px 14px" }}>
                     <span style={{ fontSize: "0.85em", color: "#DDD" }}>{nome}</span>
                     <button onClick={() => onDelete(cat.id, nome)}
-                      style={{ background: "transparent", border: "none", color: "#8A8070", cursor: "pointer", fontFamily: "inherit", fontSize: "1em", padding: 0, lineHeight: 1 }}>
-                      ✕
-                    </button>
+                      style={{ background: "transparent", border: "none", color: "#8A8070", cursor: "pointer", fontFamily: "inherit", fontSize: "1em", padding: 0, lineHeight: 1 }}><Icone nome="x" size={20} /></button>
                   </div>
                 ))}
               </div>
@@ -1207,113 +1453,215 @@ function EtiquetasScreen({ etiquetasCustom = {}, onDelete, onBack }) {
   );
 }
 
-function SettingsScreen({ state, onToggleNotif, onBack, onEditarDados, onVerDespesas, onVerEntradas, onOpenConvite, onVerEtiquetas, onOpenPlano, planoSub, onOpenAvaliacao, isAdmin, onOpenAdmin, onLogout }) {
-  // Número de WhatsApp da empresa
-  const WHATSAPP_SUPORTE = "244923933353";
-  const abrirSuporte = () => {
-    const msg = encodeURIComponent("Olá! Preciso de ajuda com a Klaco: ");
-    window.open(`https://wa.me/${WHATSAPP_SUPORTE}?text=${msg}`, "_blank");
-  };
-  const [confirmarLogout, setConfirmarLogout] = useState(false);
-
-  const Opcao = ({ emoji, titulo, sub, onClick, cor = "#E8E0D0" }) => (
-    <button onClick={onClick}
-      style={{ width: "100%", background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: 14, padding: "16px 18px", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 14, textAlign: "left", marginBottom: 10 }}>
-      <span style={{ fontSize: "1.4em" }}>{emoji}</span>
-      <div style={{ flex: 1 }}>
-        <div style={{ fontSize: "0.95em", fontWeight: 700, color: cor }}>{titulo}</div>
-        {sub && <div style={{ fontSize: "0.78em", color: "#8A8070", marginTop: 2 }}>{sub}</div>}
+// Linha de contacto reutilizada na secção «Suporte e dúvidas».
+function LinhaContacto({ icone, titulo, endereco, href, externo }) {
+  return (
+    <a href={href} {...(externo ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+      style={{ display: "flex", alignItems: "center", gap: 14, background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: 14, padding: "14px 16px", marginBottom: 10, textDecoration: "none" }}>
+      <Icone nome={icone} size={24} color="#F59E0B" />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: "0.82em", color: "#A09880", lineHeight: 1.4 }}>{titulo}</div>
+        <div style={{ fontSize: "0.92em", color: "#F59E0B", fontWeight: 700, marginTop: 3, wordBreak: "break-all" }}>{endereco}</div>
       </div>
-      <span style={{ color: "#6A6050", fontSize: "1.1em" }}>›</span>
-    </button>
+    </a>
   );
+}
 
-  const Toggle = ({ emoji, titulo, sub, ativo, onToggle }) => (
-    <div style={{ background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: 14, padding: "16px 18px", marginBottom: 10 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 14, flex: 1 }}>
-          <span style={{ fontSize: "1.4em" }}>{emoji}</span>
-          <div>
-            <div style={{ fontSize: "0.95em", fontWeight: 700, color: "#E8E0D0" }}>{titulo}</div>
-            <div style={{ fontSize: "0.78em", color: "#8A8070", marginTop: 2 }}>{sub}</div>
-          </div>
-        </div>
-        <button onClick={onToggle}
-          style={{ width: 46, height: 28, borderRadius: 14, background: ativo ? "#F59E0B" : "#2A2A2A", position: "relative", cursor: "pointer", flexShrink: 0, border: "none", transition: "background 0.2s", padding: 0 }}>
-          <div style={{ position: "absolute", top: 3, left: ativo ? 21 : 3, width: 22, height: 22, borderRadius: "50%", background: ativo ? "#000" : "#666", transition: "left 0.2s" }} />
+function SuporteModal({ onFechar }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 200, animation: "slideUp 0.25s ease" }}>
+      <div style={{ width: "100%", maxWidth: 480, background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: "24px 24px 0 0", padding: "28px 20px 36px", maxHeight: "88vh", overflowY: "auto" }}>
+        <div style={{ fontSize: "1.1em", fontWeight: 800, color: "#E8E0D0", marginBottom: 6 }}>Suporte e dúvidas</div>
+        <p style={{ color: "#8A8070", fontSize: "0.85em", lineHeight: 1.5, marginBottom: 18 }}>Escolhe o contacto certo para o que precisas.</p>
+        <LinhaContacto icone="list" titulo="Pagamentos e comprovativos" endereco={CONTACTOS.invoice} href={`mailto:${CONTACTOS.invoice}`} />
+        <LinhaContacto icone="bulb" titulo="Sugestões, elogios, pedidos de informação e assuntos comerciais" endereco={CONTACTOS.comercial} href={`mailto:${CONTACTOS.comercial}`} />
+        <LinhaContacto icone="wrench" titulo="Problemas técnicos, bugs e dificuldades de utilização" endereco={CONTACTOS.suporte} href={`mailto:${CONTACTOS.suporte}`} />
+        <LinhaContacto icone="chat" titulo="WhatsApp" endereco={CONTACTOS.whatsappTexto} href={`https://wa.me/${CONTACTOS.whatsapp}`} externo />
+        <button onClick={onFechar}
+          style={{ width: "100%", background: "transparent", border: "1px solid #2A2A2A", borderRadius: 14, padding: "14px", color: "#E8E0D0", fontWeight: 700, fontSize: "0.92em", cursor: "pointer", fontFamily: "inherit", marginTop: 6 }}>
+          Fechar
         </button>
       </div>
     </div>
   );
+}
+
+// Ícone e rótulo por tipo de notificação. Só rotula o que é inequívoco (aprovado, rejeitado, lembrete);
+// os restantes tipos aparecem tal como vêm do servidor, sem adivinhar distinções.
+function infoTipoNotif(tipo) {
+  const t = String(tipo || "").toLowerCase();
+  const legivel = t ? t.replace(/_/g, " ").replace(/^./, c => c.toUpperCase()) : "Notificação";
+  if (t.includes("aprov")) return { icone: "checkCircle", cor: "#22C55E", rotulo: "Pagamento aprovado" };
+  if (t.includes("rejeit")) return { icone: "xCircle", cor: "#EF4444", rotulo: "Pagamento rejeitado" };
+  if (t.includes("lembrete")) return { icone: "bell", cor: "#F59E0B", rotulo: "Lembrete diário" };
+  if (t.includes("trial") || t.includes("teste") || t.includes("subscri") || t.includes("expir")) return { icone: "hourglass", cor: "#F59E0B", rotulo: legivel };
+  return { icone: "bell", cor: "#F59E0B", rotulo: legivel };
+}
+
+function NotificacoesModal({ itens, onFechar, onMarcarLidas }) {
+  const naoLidas = itens.filter(n => n.lida !== true);
+  const fmt = (n) => {
+    const ms = dataNotif(n);
+    if (!ms) return "";
+    return new Intl.DateTimeFormat("pt-PT", { timeZone: FUSO_ANGOLA, day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(ms));
+  };
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 200, animation: "slideUp 0.25s ease" }}>
+      <div style={{ width: "100%", maxWidth: 480, background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: "24px 24px 0 0", padding: "24px 20px 32px", maxHeight: "85vh", display: "flex", flexDirection: "column" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+          <div style={{ fontSize: "1.1em", fontWeight: 800, color: "#E8E0D0" }}>Notificações</div>
+          <button onClick={onFechar} aria-label="Fechar"
+            style={{ background: "transparent", border: "none", color: "#8A8070", fontSize: "1.3em", cursor: "pointer", fontFamily: "inherit", lineHeight: 1 }}><Icone nome="x" size={20} /></button>
+        </div>
+        {naoLidas.length > 0 && (
+          <button onClick={() => onMarcarLidas(naoLidas.map(n => n.id))}
+            style={{ alignSelf: "flex-start", background: "transparent", border: "none", color: "#F59E0B", fontSize: "0.82em", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", marginBottom: 12, padding: 0 }}>
+            Marcar todas como lidas
+          </button>
+        )}
+        <div style={{ overflowY: "auto", flex: 1 }}>
+          {itens.length === 0 ? (
+            <div style={{ textAlign: "center", color: "#9F9582", fontSize: "0.9em", padding: "36px 0" }}>Ainda não tens notificações.</div>
+          ) : itens.map(n => {
+            const { icone, cor, rotulo } = infoTipoNotif(n.tipo);
+            const lida = n.lida === true;
+            return (
+              <button key={n.id} onClick={() => { if (!lida) onMarcarLidas([n.id]); }}
+                style={{ width: "100%", textAlign: "left", display: "flex", gap: 12, background: lida ? "transparent" : "#141000", border: `1px solid ${lida ? "#161616" : "#2A2000"}`, borderRadius: 14, padding: "12px 14px", marginBottom: 8, cursor: lida ? "default" : "pointer", fontFamily: "inherit" }}>
+                <Icone nome={icone} size={24} color={cor} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ color: "#E8E0D0", fontWeight: lida ? 600 : 800, fontSize: "0.9em" }}>{n.titulo || n.title || rotulo}</span>
+                    {!lida && <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#F59E0B", flexShrink: 0 }} />}
+                  </div>
+                  {(n.mensagem || n.message) && <div style={{ color: "#A09880", fontSize: "0.82em", lineHeight: 1.5, marginTop: 3 }}>{n.mensagem || n.message}</div>}
+                  <div style={{ color: "#9F9582", fontSize: "0.72em", marginTop: 6 }}>{rotulo}{fmt(n) ? ` · ${fmt(n)}` : ""}</div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Linha das Definições: ícone, título, subtítulo e seta (ou interruptor).
+function LinhaConfig({ icone, titulo, sub, onClick, tipo = "seta", ativo, onToggle, ultimo }) {
+  const perigo = tipo === "perigo";
+  const miolo = (
+    <>
+      <div style={{ width: 36, height: 36, borderRadius: 11, background: perigo ? "rgba(239,68,68,0.12)" : "rgba(245,158,11,0.12)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <Icone nome={icone} size={20} color={perigo ? "#EF4444" : "#F59E0B"} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
+        <div style={{ fontSize: "0.95em", fontWeight: 700, color: perigo ? "#EF4444" : "#F2EBDD" }}>{titulo}</div>
+        {sub && <div style={{ fontSize: "0.78em", color: "#BDB3A0", marginTop: 2, lineHeight: 1.35 }}>{sub}</div>}
+      </div>
+    </>
+  );
+  const base = { display: "flex", alignItems: "center", gap: 13, padding: "13px 14px", borderBottom: ultimo ? "none" : "1px solid #1A1A1A" };
+  if (tipo === "toggle") {
+    return (
+      <div style={base}>
+        {miolo}
+        <button onClick={onToggle} aria-pressed={!!ativo} aria-label={titulo}
+          style={{ width: 46, height: 28, borderRadius: 14, background: ativo ? "#F59E0B" : "#2A2A2A", position: "relative", cursor: "pointer", flexShrink: 0, border: "none", transition: "background 0.2s", padding: 0 }}>
+          <div style={{ position: "absolute", top: 3, left: ativo ? 21 : 3, width: 22, height: 22, borderRadius: "50%", background: ativo ? "#1A1203" : "#8A8070", transition: "left 0.2s" }} />
+        </button>
+      </div>
+    );
+  }
+  return (
+    <button onClick={onClick} style={{ ...base, width: "100%", background: "transparent", border: "none", borderBottom: base.borderBottom, cursor: "pointer", fontFamily: "inherit", fontSize: "inherit" }}>
+      {miolo}
+      {!perigo && <Icone nome="chev" size={18} color="#8A8070" sw={2} />}
+    </button>
+  );
+}
+function GrupoConfig({ titulo, children }) {
+  return (
+    <>
+      {titulo && <div style={{ fontSize: "0.72em", fontWeight: 700, letterSpacing: "0.09em", color: "#9F9582", margin: "20px 4px 8px" }}>{titulo}</div>}
+      <div style={{ background: "#101010", border: "1px solid #1C1C1C", borderRadius: 18, overflow: "hidden", marginTop: titulo ? 0 : 20 }}>{children}</div>
+    </>
+  );
+}
+
+function SettingsScreen({ state, onToggleNotif, onBack, onEditarDados, onVerDespesas, onVerEntradas, onOpenConvite, onVerEtiquetas, onOpenPlano, planoSub, onOpenAvaliacao, isAdmin, onOpenAdmin, onLogout, diasTeste }) {
+  const [mostrarSuporte, setMostrarSuporte] = useState(false);
+  const [confirmarLogout, setConfirmarLogout] = useState(false);
+
+  const paga = acessoPagoValido(state.estadoConta, state.acessoAte);
+  const nomePlano = state.planoAtivo === "anual" ? "Anual" : state.planoAtivo === "mensal" ? "Mensal" : "";
+  const fmtD = (iso) => { try { const [a, m, d] = iso.split("-"); return `${d}/${m}/${a}`; } catch (e) { return iso; } };
 
   return (
     <div style={S.screen}>
-      <div style={S.topBar}>
-        <button onClick={onBack} style={S.backBtn}>← Voltar</button>
-        <div style={S.screenTitle}>Definições</div>
-        <div style={{ width: 60 }} />
+      <div style={{ padding: "8px 20px 0" }}>
+        <div style={{ fontSize: "1.8em", fontWeight: 800, letterSpacing: "-0.02em", color: "#F2EBDD" }}>Definições</div>
       </div>
       <div style={{ padding: "0 16px" }}>
-        {/* Cartão de conta — nome + estado (gratuita ou paga) */}
-        {(() => {
-          const paga = state.estadoConta === "ativo" && state.acessoAte && state.acessoAte >= todayStr();
-          const nomePlano = state.planoAtivo === "anual" ? "Anual" : state.planoAtivo === "mensal" ? "Mensal" : "";
-          const fmtD = (iso) => { try { const [a,m,d]=iso.split("-"); return `${d}/${m}/${a}`; } catch(e){ return iso; } };
-          return (
-            <div style={{ background: "#0D0D0D", border: `1px solid ${paga ? "#22C55E" : "#1A1A1A"}`, borderRadius: 16, padding: "18px", marginBottom: 18, display: "flex", alignItems: "center", gap: 14 }}>
-              <div style={{ width: 46, height: 46, borderRadius: "50%", background: "#1A1400", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.4em", flexShrink: 0 }}>
-                {(state.nome || "?").charAt(0).toUpperCase()}
+        {/* Cartão de conta — nome + estado (ADMIN, conta ativa ou teste) */}
+        <div style={{ marginTop: 16, background: "#101010", border: `1px solid ${isAdmin ? "#F59E0B" : paga ? "#22C55E" : "rgba(245,158,11,0.28)"}`, borderRadius: 18, padding: 16, display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{ width: 50, height: 50, borderRadius: "50%", background: "#F59E0B", color: "#1A1203", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.35em", fontWeight: 800, flexShrink: 0 }}>
+            {(state.nome || "?").charAt(0).toUpperCase()}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: "1.05em", fontWeight: 800, color: "#F2EBDD" }}>{state.nome || "A minha conta"}</div>
+            {isAdmin ? (
+              <div style={{ display: "inline-block", marginTop: 4, padding: "2px 10px", borderRadius: 20, background: "#F59E0B", color: "#080808", fontSize: "0.72em", fontWeight: 800, letterSpacing: "0.08em" }}>ADMIN</div>
+            ) : paga ? (
+              <div style={{ fontSize: "0.8em", color: "#22C55E", fontWeight: 600, marginTop: 3, display: "flex", alignItems: "center", gap: 5 }}>
+                <Icone nome="check" size={14} sw={2.4} />Conta ativa{nomePlano ? ` · ${nomePlano}` : ""}{state.acessoAte ? ` · até ${fmtD(state.acessoAte)}` : ""}
               </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: "1em", fontWeight: 800, color: "#E8E0D0" }}>{state.nome || "A minha conta"}</div>
-                {paga ? (
-                  <div style={{ fontSize: "0.8em", color: "#22C55E", fontWeight: 600, marginTop: 2 }}>
-                    ✓ Conta ativa{nomePlano ? ` · ${nomePlano}` : ""}{state.acessoAte ? ` · até ${fmtD(state.acessoAte)}` : ""}
-                  </div>
-                ) : (
-                  <div style={{ fontSize: "0.8em", color: "#F59E0B", fontWeight: 600, marginTop: 2 }}>
-                    Conta gratuita · período de teste
-                  </div>
-                )}
+            ) : (
+              <div style={{ fontSize: "0.82em", color: "#BDB3A0", marginTop: 3 }}>
+                {typeof diasTeste === "number" ? `Teste grátis · ${diasTeste} ${diasTeste === 1 ? "dia" : "dias"}` : "Conta gratuita · período de teste"}
               </div>
-            </div>
-          );
-        })()}
+            )}
+          </div>
+          {!isAdmin && !paga && (
+            <button onClick={onOpenPlano}
+              style={{ padding: "9px 14px", borderRadius: 20, background: "#F59E0B", color: "#1A1203", border: "none", fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>
+              Pagar já
+            </button>
+          )}
+        </div>
+
         {isAdmin && (
-          <Opcao emoji="🛠️" titulo="Painel de administração" sub="Gerir utilizadores e confirmar pagamentos" onClick={onOpenAdmin} cor="#F59E0B" />
+          <GrupoConfig titulo="ADMINISTRAÇÃO">
+            <LinhaConfig icone="wrench" titulo="Painel de administração" sub="Gerir utilizadores e confirmar pagamentos" onClick={onOpenAdmin} ultimo />
+          </GrupoConfig>
         )}
-        <Opcao emoji="⭐" titulo="Meu plano" sub={planoSub} onClick={onOpenPlano} cor="#F59E0B" />
-        <Opcao emoji="👤" titulo="Editar os meus dados" sub="Nome, rendimento, datas e percentagens" onClick={onEditarDados} />
-        <Opcao emoji="🛒" titulo="Todas as despesas" sub="Ver, editar ou apagar" onClick={onVerDespesas} />
-        <Opcao emoji="🏷️" titulo="As minhas etiquetas" sub="Descrições guardadas para lançar mais rápido" onClick={onVerEtiquetas} />
-        <Opcao emoji="💰" titulo="Todas as entradas" sub="13º, bónus, subsídios e mais" onClick={onVerEntradas} />
-        <Opcao emoji="🤝" titulo="Comunidade e convites" sub="Convida amigos para a Klaco" onClick={onOpenConvite} cor="#F59E0B" />
-        <Opcao emoji="⭐" titulo="Deixar a tua opinião" sub="Avalia a Klaco e diz-nos o que achas" onClick={onOpenAvaliacao} />
-        <Opcao emoji="💬" titulo="Suporte e dúvidas" sub="Fala connosco no WhatsApp" onClick={abrirSuporte} cor="#22C55E" />
 
-        {/* NOTIFICAÇÕES — dois consentimentos independentes */}
-        <div style={{ fontSize: "0.72em", fontWeight: 700, letterSpacing: "0.08em", color: "#6A6050", margin: "18px 4px 10px" }}>NOTIFICAÇÕES</div>
+        <GrupoConfig titulo="CONTA">
+          {!isAdmin && <LinhaConfig icone="card" titulo="Meu plano" sub={planoSub} onClick={onOpenPlano} />}
+          <LinhaConfig icone="user" titulo="Editar os meus dados" sub="Nome, rendimento, datas e percentagens" onClick={onEditarDados} />
+          {/* [DEV] Cada interruptor reflecte o consentimento. O backend só envia cada tipo a quem tem o respectivo consentimento ligado. */}
+          <LinhaConfig icone="bell" tipo="toggle" titulo="Lembrete diário" sub="Saber quanto podes gastar hoje" ativo={state.notifLembrete} onToggle={() => onToggleNotif("notifLembrete")} />
+          <LinhaConfig icone="megaphone" tipo="toggle" titulo="Novidades e promoções" sub="Ofertas e atualizações da Klaco" ativo={state.notifNovidades} onToggle={() => onToggleNotif("notifNovidades")} ultimo />
+        </GrupoConfig>
 
-        {/* [DEV] Cada interruptor reflecte o consentimento. O backend só envia cada tipo a quem tem o respectivo consentimento ligado. */}
-        <Toggle
-          emoji="🔔"
-          titulo="Lembrete diário"
-          sub="Saber quanto podes gastar hoje 🌅"
-          ativo={state.notifLembrete}
-          onToggle={() => onToggleNotif("notifLembrete")}
-        />
-        <Toggle
-          emoji="📣"
-          titulo="Novidades e promoções"
-          sub="Ofertas e atualizações da Klaco"
-          ativo={state.notifNovidades}
-          onToggle={() => onToggleNotif("notifNovidades")}
-        />
+        <GrupoConfig titulo="O TEU DINHEIRO">
+          <LinhaConfig icone="list" titulo="Todas as despesas" sub="Ver, editar ou apagar" onClick={onVerDespesas} />
+          <LinhaConfig icone="arrowin" titulo="Todas as entradas" sub="13º, bónus, subsídios e mais" onClick={onVerEntradas} />
+          <LinhaConfig icone="tag" titulo="As minhas etiquetas" sub="Descrições guardadas para lançar mais rápido" onClick={onVerEtiquetas} ultimo />
+        </GrupoConfig>
+
+        <GrupoConfig titulo="COMUNIDADE E AJUDA">
+          <LinhaConfig icone="users" titulo="Convidar amigos" sub="Convida amigos para a Klaco" onClick={onOpenConvite} />
+          <LinhaConfig icone="star" titulo="Deixar a tua opinião" sub="Avalia a Klaco e diz-nos o que achas" onClick={onOpenAvaliacao} />
+          <LinhaConfig icone="chat" titulo="Suporte e dúvidas" sub="Pagamentos, sugestões e problemas técnicos" onClick={() => setMostrarSuporte(true)} ultimo />
+        </GrupoConfig>
 
         {/* SAIR DA CONTA — visível, com confirmação antes de terminar a sessão */}
-        <div style={{ fontSize: "0.72em", fontWeight: 700, letterSpacing: "0.08em", color: "#6A6050", margin: "18px 4px 10px" }}>CONTA</div>
-        <Opcao emoji="🚪" titulo="Sair da conta" sub="Terminar sessão neste aparelho" onClick={() => setConfirmarLogout(true)} cor="#EF4444" />
+        <GrupoConfig>
+          <LinhaConfig icone="logout" tipo="perigo" titulo="Sair da conta" sub="Terminar sessão neste aparelho" onClick={() => setConfirmarLogout(true)} ultimo />
+        </GrupoConfig>
       </div>
+
+      {mostrarSuporte && <SuporteModal onFechar={() => setMostrarSuporte(false)} />}
 
       {confirmarLogout && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 200, animation: "slideUp 0.25s ease" }}>
@@ -1399,7 +1747,7 @@ function EditarDadosScreen({ state, onSave, onBack }) {
           {CATS.map(c => (
             <div key={c.id} style={{ background: "#0A0A0A", border: `1px solid ${c.color}30`, borderRadius: 12, padding: "12px 14px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                <span style={{ fontWeight: 600, fontSize: "0.9em", color: "#DDD" }}>{c.emoji} {c.label}</span>
+                <span style={{ fontWeight: 600, fontSize: "0.9em", color: "#DDD", display: "inline-flex", alignItems: "center", gap: 6 }}><Emo e={c.emoji} size={16} color={c.color} /> {c.label}</span>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <input type="number" min="0" max="100" value={pct[c.id]} onChange={e => handlePct(c.id, e.target.value)}
                     style={{ width: 52, background: "#111", border: `1px solid ${c.color}60`, borderRadius: 8, padding: "5px 8px", color: c.color, fontWeight: 800, fontFamily: "inherit", outline: "none", textAlign: "center", fontSize: "0.95em" }} />
@@ -1413,7 +1761,7 @@ function EditarDadosScreen({ state, onSave, onBack }) {
             </div>
           ))}
           <div style={{ textAlign: "center", fontSize: "0.82em", fontWeight: 700, color: totalPct === 100 ? "#22C55E" : "#EF4444", padding: "6px", borderRadius: 8, background: totalPct === 100 ? "#22C55E10" : "#EF444410" }}>
-            {totalPct === 100 ? "✓ 100% — perfeito!" : `Total: ${totalPct}%`}
+            {totalPct === 100 ? <><Icone nome="check" size={15} sw={2.4} /> 100% — perfeito!</> : `Total: ${totalPct}%`}
           </div>
         </div>
 
@@ -1423,7 +1771,7 @@ function EditarDadosScreen({ state, onSave, onBack }) {
         </button>
         {guardado && (
           <div style={{ background: "#0A1A0A", border: "1px solid #22C55E40", borderRadius: 12, padding: "12px 16px", marginBottom: 20, animation: "slideUp 0.2s ease", display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: "1.1em" }}>✓</span>
+            <Icone nome="check" size={16} sw={2.6} />
             <span style={{ fontSize: "0.86em", color: "#22C55E", fontWeight: 600 }}>Guardado. O teu número já reflete as alterações.</span>
           </div>
         )}
@@ -1494,7 +1842,7 @@ function AddExpenseScreen({ onSave, onBack, despesasAnteriores, saldoRestante, e
                   background: categoria === c.id ? `${c.color}18` : "#0F0F0F",
                   border: `1px solid ${categoria === c.id ? c.color : "#1E1E1E"}`,
                   borderRadius: 12, padding: "10px 6px", cursor: "pointer", fontFamily: "inherit", transition: "all 0.2s" }}>
-                <span style={{ fontSize: "1.4em" }}>{c.emoji}</span>
+                <Emo e={c.emoji} size={24} color={c.color} />
                 <span style={{ fontSize: "0.68em", fontWeight: 700, color: categoria === c.id ? c.color : "#8A8070", textAlign: "center", lineHeight: 1.2 }}>{c.label}</span>
               </button>
             ))}
@@ -1513,7 +1861,7 @@ function AddExpenseScreen({ onSave, onBack, despesasAnteriores, saldoRestante, e
           {/* Suggestions grid */}
           {showSugg && filtered.length > 0 && (
             <div style={{ marginTop: 10 }}>
-              <div style={{ fontSize: "0.68em", color: "#6A6050", fontWeight: 700, letterSpacing: "0.08em", marginBottom: 6 }}>
+              <div style={{ fontSize: "0.68em", color: "#9F9582", fontWeight: 700, letterSpacing: "0.08em", marginBottom: 6 }}>
                 {descricao ? "SUGESTÕES" : `COMUNS EM ${cat?.label?.toUpperCase()}`}
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -1526,7 +1874,7 @@ function AddExpenseScreen({ onSave, onBack, despesasAnteriores, saldoRestante, e
                       fontFamily: "inherit", fontSize: "0.8em",
                       color: descricao === s.nome ? cat?.color : "#A09880",
                       transition: "all 0.15s" }}>
-                    <span>{s.emoji}</span>
+                    <Emo e={s.emoji} size={15} color="currentColor" />
                     <span>{s.nome}</span>
                   </button>
                 ))}
@@ -1580,9 +1928,9 @@ function AddExpenseScreen({ onSave, onBack, despesasAnteriores, saldoRestante, e
           <button onClick={() => setGuardarEtiqueta(v => !v)}
             style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", background: guardarEtiqueta ? "#F59E0B15" : "#0A0A0A", border: `1px solid ${guardarEtiqueta ? "#F59E0B" : "#1E1E1E"}`, borderRadius: 12, padding: "12px 14px", cursor: "pointer", fontFamily: "inherit", marginBottom: 16, textAlign: "left" }}>
             <div style={{ width: 20, height: 20, borderRadius: 5, border: `2px solid ${guardarEtiqueta ? "#F59E0B" : "#444"}`, background: guardarEtiqueta ? "#F59E0B" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              {guardarEtiqueta && <span style={{ color: "#000", fontWeight: 800, fontSize: "0.7em" }}>✓</span>}
+              {guardarEtiqueta && <Icone nome="check" size={12} color="#000" sw={3.2} />}
             </div>
-            <span style={{ fontSize: "0.85em", color: "#C8C0B0" }}>🏷️ Guardar "{descricao.trim()}" para a próxima vez</span>
+            <span style={{ fontSize: "0.85em", color: "#C8C0B0", display: "inline-flex", alignItems: "center", gap: 6 }}><Icone nome="tag" size={15} /> Guardar "{descricao.trim()}" para a próxima vez</span>
           </button>
         )}
 
@@ -1693,20 +2041,20 @@ function GoalsScreen({ state, onBack, onSaveGoal, onDeleteGoal, onAddToGoal, onU
                 <div key={obj.id} style={{ background: "#0F0F0F", border: `1px solid ${cat?.color}30`, borderRadius: 16, padding: "16px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <span style={{ fontSize: "1.8em" }}>{obj.emoji}</span>
+                      <Emo e={obj.emoji} size={30} color="#F59E0B" fallback="target" />
                       <div>
                         <div style={{ fontWeight: 700, fontSize: "0.95em", color: "#DDD" }}>{obj.nome}</div>
                         <div style={{ fontSize: "0.72em", color: "#8A8070", marginTop: 2 }}>
-                          {cat?.emoji} {cat?.label}
-                          {obj.acumulacaoAuto && <span style={{ color: "#22C55E", marginLeft: 6 }}>· 🔄 Automático</span>}
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><Emo e={cat?.emoji} size={14} color={cat?.color} /> {cat?.label}</span>
+                          {obj.acumulacaoAuto && <span style={{ color: "#22C55E", marginLeft: 6 }}>· <Icone nome="refresh" size={13} style={{ marginRight: 4 }} />Automático</span>}
                         </div>
                       </div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                       <button onClick={() => abrirEdicao(obj)}
-                        style={{ background: "transparent", border: "none", color: "#8A8070", cursor: "pointer", fontSize: "0.95em", padding: "4px 6px" }}>✎</button>
+                        style={{ background: "transparent", border: "none", color: "#8A8070", cursor: "pointer", fontSize: "0.95em", padding: "4px 6px" }}><Icone nome="pencil" size={16} /></button>
                       <button onClick={() => onDeleteGoal(obj.id)}
-                        style={{ background: "transparent", border: "none", color: "#333", cursor: "pointer", fontSize: "1em", padding: "4px 6px" }}>✕</button>
+                        style={{ background: "transparent", border: "none", color: "#333", cursor: "pointer", fontSize: "1em", padding: "4px 6px" }}><Icone nome="x" size={20} /></button>
                     </div>
                   </div>
 
@@ -1761,9 +2109,7 @@ function GoalsScreen({ state, onBack, onSaveGoal, onDeleteGoal, onAddToGoal, onU
                         </button>
                         <button
                           onClick={() => { setAddandoId(null); setValorAdd(""); setValorAddDisplay(""); }}
-                          style={{ background: "transparent", border: "1px solid #222", borderRadius: 10, padding: "10px 12px", color: "#8A8070", cursor: "pointer", fontFamily: "inherit", fontSize: "0.82em" }}>
-                          ✕
-                        </button>
+                          style={{ background: "transparent", border: "1px solid #222", borderRadius: 10, padding: "10px 12px", color: "#8A8070", cursor: "pointer", fontFamily: "inherit", fontSize: "0.82em" }}><Icone nome="x" size={20} /></button>
                       </div>
                     ) : (
                       <button
@@ -1775,7 +2121,7 @@ function GoalsScreen({ state, onBack, onSaveGoal, onDeleteGoal, onAddToGoal, onU
                   )}
                   {pctConcluido >= 100 && (
                     <div style={{ marginTop: 10, textAlign: "center", fontSize: "0.82em", color: "#22C55E", fontWeight: 700 }}>
-                      🎉 Objectivo atingido!
+                      <Icone nome="award" size={16} style={{ marginRight: 6 }} />Objectivo atingido!
                     </div>
                   )}
                 </div>
@@ -1800,7 +2146,7 @@ function GoalsScreen({ state, onBack, onSaveGoal, onDeleteGoal, onAddToGoal, onU
                 {SUGESTOES_OBJ.map(s => (
                   <button key={s.nome} onClick={() => { setNome(s.nome); setEmoji(s.emoji); }}
                     style={{ display: "flex", alignItems: "center", gap: 5, background: nome === s.nome ? "#F59E0B20" : "#111", border: `1px solid ${nome === s.nome ? "#F59E0B" : "#222"}`, borderRadius: 20, padding: "7px 12px", cursor: "pointer", fontFamily: "inherit" }}>
-                    <span style={{ fontSize: "0.95em" }}>{s.emoji}</span>
+                    <Emo e={s.emoji} size={16} color="#F59E0B" fallback="target" />
                     <span style={{ fontSize: "0.78em", color: nome === s.nome ? "#F59E0B" : "#C8C0B0", fontWeight: 600 }}>{s.nome}</span>
                   </button>
                 ))}
@@ -1845,7 +2191,7 @@ function GoalsScreen({ state, onBack, onSaveGoal, onDeleteGoal, onAddToGoal, onU
                 {CATS.map(c => (
                   <button key={c.id} onClick={() => setCategoria(c.id)}
                     style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, background: categoria === c.id ? `${c.color}18` : "#0A0A0A", border: `1px solid ${categoria === c.id ? c.color : "#1E1E1E"}`, borderRadius: 10, padding: "8px 4px", cursor: "pointer", fontFamily: "inherit" }}>
-                    <span style={{ fontSize: "1.2em" }}>{c.emoji}</span>
+                    <Emo e={c.emoji} size={22} color={c.color} />
                     <span style={{ fontSize: "0.62em", fontWeight: 700, color: categoria === c.id ? c.color : "#8A8070", textAlign: "center" }}>{c.label}</span>
                   </button>
                 ))}
@@ -1872,7 +2218,7 @@ function GoalsScreen({ state, onBack, onSaveGoal, onDeleteGoal, onAddToGoal, onU
             <button onClick={() => setAcumulacaoAuto(v => !v)}
               style={{ display: "flex", alignItems: "flex-start", gap: 10, width: "100%", background: acumulacaoAuto ? "#22C55E15" : "#0A0A0A", border: `1px solid ${acumulacaoAuto ? "#22C55E" : "#1E1E1E"}`, borderRadius: 12, padding: "13px 14px", cursor: "pointer", fontFamily: "inherit", marginBottom: 16, textAlign: "left" }}>
               <div style={{ width: 20, height: 20, borderRadius: 5, border: `2px solid ${acumulacaoAuto ? "#22C55E" : "#444"}`, background: acumulacaoAuto ? "#22C55E" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1 }}>
-                {acumulacaoAuto && <span style={{ color: "#000", fontWeight: 800, fontSize: "0.7em" }}>✓</span>}
+                {acumulacaoAuto && <Icone nome="check" size={12} color="#000" sw={3.2} />}
               </div>
               <div>
                 <div style={{ fontSize: "0.85em", fontWeight: 700, color: "#DDD" }}>Acumular automaticamente</div>
@@ -1905,7 +2251,7 @@ function GoalsScreen({ state, onBack, onSaveGoal, onDeleteGoal, onAddToGoal, onU
 
         {objectivos.length === 0 && !showForm && (
           <div style={{ textAlign: "center", padding: "32px 16px", color: "#333" }}>
-            <div style={{ fontSize: "2.5em", marginBottom: 10 }}>🎯</div>
+            <div style={{ marginBottom: 10 }}><Icone nome="target" size={44} color="#F59E0B" /></div>
             <div style={{ fontSize: "0.85em", color: "#8A8070" }}>Define um objectivo e vê quanto tempo demoras a atingi-lo.</div>
           </div>
         )}
@@ -2047,7 +2393,7 @@ function ChartsScreen({ state, onBack }) {
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 22 }}>
               {insights.map((ins, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 12, background: "#0F0F0F", border: `1px solid ${ins.cor}30`, borderRadius: 12, padding: "12px 14px" }}>
-                  <span style={{ fontSize: "1.3em", flexShrink: 0 }}>{ins.emoji}</span>
+                  <Emo e={ins.emoji} size={24} color="#F59E0B" fallback="sparkle" />
                   <div>
                     <div style={{ fontSize: "0.85em", fontWeight: 700, color: "#DDD", lineHeight: 1.3 }}>{ins.texto}</div>
                     <div style={{ fontSize: "0.72em", color: "#8A8070", marginTop: 3, lineHeight: 1.4 }}>{ins.detalhe}</div>
@@ -2085,7 +2431,7 @@ function ChartsScreen({ state, onBack }) {
                       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
                         <span style={{ fontSize: "0.8em", color: "#CCC", display: "flex", alignItems: "center", gap: 5 }}>
                           <span style={{ width: 8, height: 8, borderRadius: "50%", background: c.color, display: "inline-block" }} />
-                          {c.emoji} {c.label}
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Emo e={c.emoji} size={16} color={c.color} /> {c.label}</span>
                         </span>
                         <span style={{ fontSize: "0.78em", fontWeight: 700, color: c.gasto > c.orcamento ? "#EF4444" : c.color }}>
                           {c.orcamento > 0 ? ((c.gasto / c.orcamento) * 100).toFixed(0) : 0}%
@@ -2116,7 +2462,7 @@ function ChartsScreen({ state, onBack }) {
                       <div key={nome} style={{ background: "#0F0F0F", border: "1px solid #1A1A1A", borderRadius: 12, padding: "12px 14px" }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <span style={{ fontSize: "0.7em", fontWeight: 800, color: "#6A6050", minWidth: 16 }}>#{i + 1}</span>
+                            <span style={{ fontSize: "0.7em", fontWeight: 800, color: "#9F9582", minWidth: 16 }}>#{i + 1}</span>
                             <span style={{ fontSize: "0.9em", fontWeight: 600, color: "#DDD" }}>{nome}</span>
                             {cat && <span style={{ fontSize: "0.65em", background: `${cat.color}20`, color: cat.color, padding: "2px 7px", borderRadius: 10, fontWeight: 700 }}>{cat.label}</span>}
                           </div>
@@ -2125,7 +2471,7 @@ function ChartsScreen({ state, onBack }) {
                         <div style={{ height: 3, background: "#1A1A1A", borderRadius: 2, overflow: "hidden" }}>
                           <div style={{ width: `${pctBar}%`, height: "100%", background: cat?.color || "#F59E0B", borderRadius: 2 }} />
                         </div>
-                        <div style={{ fontSize: "0.68em", color: "#6A6050", marginTop: 3 }}>{pctBar.toFixed(1)}% do total gasto</div>
+                        <div style={{ fontSize: "0.68em", color: "#9F9582", marginTop: 3 }}>{pctBar.toFixed(1)}% do total gasto</div>
                       </div>
                     );
                   })}
@@ -2134,8 +2480,8 @@ function ChartsScreen({ state, onBack }) {
             )}
           </>
         ) : (
-          <div style={{ textAlign: "center", padding: "40px 20px", color: "#6A6050" }}>
-            <div style={{ fontSize: "3em", marginBottom: 12 }}>📊</div>
+          <div style={{ textAlign: "center", padding: "40px 20px", color: "#9F9582" }}>
+            <div style={{ marginBottom: 12 }}><Icone nome="chart" size={52} color="#F59E0B" /></div>
             <div style={{ fontWeight: 700, color: "#8A8070", marginBottom: 8 }}>Ainda sem dados</div>
             <div style={{ fontSize: "0.85em" }}>Regista as tuas primeiras despesas para ver os gráficos.</div>
           </div>
@@ -2147,7 +2493,7 @@ function ChartsScreen({ state, onBack }) {
 
 // ── PRÉ-RESERVA BANNER (shown after saving expense from day 4 onwards) ─────────
 // ── TRIAL EXPIRED SCREEN — Pagamento ─────────────────────────────────────────
-function AnelContagem({ diasRestantes, total = 14 }) {
+function AnelContagem({ diasRestantes, total = TRIAL_DAYS }) {
   const frac = Math.max(0, Math.min(1, diasRestantes / total));
   const r = 34, circ = 2 * Math.PI * r;
   const preenchido = circ * frac;
@@ -2202,10 +2548,10 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo,
     return (
       <div style={S.setup}>
         <div style={S.setupCard}>
-          <div style={{ fontSize: "3em", marginBottom: 16, textAlign: "center" }}>🌅</div>
+          <div style={{ marginBottom: 16, textAlign: "center" }}><Sol size={56} /></div>
           <div style={{ ...S.logo, marginBottom: 12, textAlign: "center" }}>A processar o pagamento</div>
           <p style={{ color: "#C8C0B0", fontSize: "0.95em", lineHeight: 1.7, textAlign: "center", marginBottom: 20 }}>
-            Estás a ser encaminhado para pagamento seguro. Assim que o pagamento for confirmado, o teu acesso é ativado automaticamente. 🙂
+            Estás a ser encaminhado para pagamento seguro. Assim que o pagamento for confirmado, o teu acesso é ativado automaticamente.
           </p>
           <div style={{ background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: 14, padding: "14px 16px", fontSize: "0.8em", color: "#8A8070", lineHeight: 1.6, marginBottom: 20, textAlign: "center" }}>
             Integração de pagamento (Multicaixa Express · Referência · Débito direto) — via gateway AppyPay / BAI.
@@ -2226,9 +2572,7 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo,
         <div style={S.setupCard}>
           {onFechar && (
             <button onClick={onFechar} aria-label="Fechar"
-              style={{ position: "fixed", top: "calc(env(safe-area-inset-top, 0px) + 14px)", right: 16, zIndex: 50, width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", background: "#141414", border: "1px solid #2A2A2A", borderRadius: "50%", color: "#E8E0D0", fontSize: "1.1em", cursor: "pointer", fontFamily: "inherit", lineHeight: 1 }}>
-              ✕
-            </button>
+              style={{ position: "fixed", top: "calc(env(safe-area-inset-top, 0px) + 14px)", right: 16, zIndex: 50, width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", background: "#141414", border: "1px solid #2A2A2A", borderRadius: "50%", color: "#E8E0D0", fontSize: "1.1em", cursor: "pointer", fontFamily: "inherit", lineHeight: 1 }}><Icone nome="x" size={20} /></button>
           )}
 
           {dentroDoTeste ? (
@@ -2239,22 +2583,22 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo,
                 <div>
                   <div style={{ fontSize: "1.15em", fontWeight: 800, color: "#F59E0B", lineHeight: 1.2 }}>Paga agora e poupa 50%</div>
                   <div style={{ fontSize: "0.82em", color: "#A09880", marginTop: 4, lineHeight: 1.4 }}>
-                    Só enquanto durar o teu período gratuito. 🌅
+                    Só enquanto durar o teu período gratuito.
                   </div>
                 </div>
               </div>
             </>
           ) : subscricaoExpirada ? (
             <>
-              <div style={{ fontSize: "2.5em", marginBottom: 12 }}>⏳</div>
+              <div style={{ marginBottom: 12 }}><Icone nome="hourglass" size={44} color="#F59E0B" /></div>
               <div style={{ ...S.logo, marginBottom: 8 }}>A tua subscrição expirou</div>
               <p style={{ color: "#A09880", fontSize: "0.92em", lineHeight: 1.6, marginBottom: 22 }}>
-                Os teus dados estão guardados. Renova para continuares a saber, todos os dias, quanto podes gastar. 🌅
+                Os teus dados estão guardados. Renova para continuares a saber, todos os dias, quanto podes gastar.
               </p>
             </>
           ) : (
             <>
-              <div style={{ fontSize: "2.5em", marginBottom: 12 }}>🔓</div>
+              <div style={{ marginBottom: 12 }}><Icone nome="unlock" size={44} color="#F59E0B" /></div>
               <div style={{ ...S.logo, marginBottom: 8 }}>Os teus 7 dias gratuitos acabaram</div>
               <p style={{ color: "#A09880", fontSize: "0.92em", lineHeight: 1.6, marginBottom: 22 }}>
                 Já sabes o que é abrir o telemóvel e saber exactamente quanto podes gastar hoje. Continua a gastar sem culpa.
@@ -2303,7 +2647,7 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo,
 
           <p style={{ fontSize: "0.8em", color: "#8A8070", textAlign: "center", lineHeight: 1.6, marginTop: 18 }}>
             Precisas de ajuda? Fala com o suporte da Klaco:{" "}
-            <a href="mailto:suporte@klaco.app" style={{ color: "#F59E0B", textDecoration: "none", fontWeight: 600 }}>suporte@klaco.app</a>
+            <a href={`mailto:${CONTACTOS.suporte}`} style={{ color: "#F59E0B", textDecoration: "none", fontWeight: 600 }}>{CONTACTOS.suporte}</a>
           </p>
 
           {onTrocarConta && (
@@ -2322,7 +2666,7 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo,
   // ── PÁGINA 2 — PAGAMENTO MANUAL (transferência + comprovativo por WhatsApp) ──
   // Cliente transfere, envia o comprovativo por WhatsApp e clica "Já enviei o comprovativo",
   // o que cria uma SOLICITAÇÃO pendente (não ativa a conta). O admin aprova depois.
-  const WHATSAPP = "244952272299";
+  const WHATSAPP = CONTACTOS.whatsapp;
   const msgWhats = encodeURIComponent(
     `Olá! Fiz o pagamento da Klaco (plano ${dados.nome} — ${dados.valor}). Segue o comprovativo.`
   );
@@ -2333,7 +2677,7 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo,
     const r = await onComprovativo(plano);
     setAEnviar(false);
     if (r && r.ok) {
-      setMsgSolicitacao({ tipo: "ok", texto: "Solicitação enviada. O teu pagamento será analisado e o acesso ativado após confirmação. 🌅" });
+      setMsgSolicitacao({ tipo: "ok", texto: "Solicitação enviada. O teu pagamento será analisado e o acesso ativado após confirmação." });
     } else if (r && /pendente|já existe/i.test(r.erro || "")) {
       setMsgSolicitacao({ tipo: "ok", texto: "Já tens uma solicitação pendente. Vamos analisá-la em breve." });
     } else {
@@ -2354,7 +2698,7 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo,
           <span style={{ color: "#A09880", fontSize: "0.88em" }}>Valor a pagar</span>
           <span style={{ color: "#F59E0B", fontSize: "1.2em", fontWeight: 800 }}>
             {dados.cheio && dados.cheio !== dados.valor && (
-              <span style={{ textDecoration: "line-through", color: "#6A6050", fontSize: "0.75em", marginRight: 6 }}>{dados.cheio}</span>
+              <span style={{ textDecoration: "line-through", color: "#9F9582", fontSize: "0.75em", marginRight: 6 }}>{dados.cheio}</span>
             )}
             {dados.valor} <span style={{ fontSize: "0.6em", color: "#8A8070", fontWeight: 600 }}>{dados.periodo}</span>
           </span>
@@ -2381,9 +2725,13 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo,
         </div>
         <a href={linkWhats} target="_blank" rel="noopener noreferrer"
           style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, background: "#22C55E", borderRadius: 14, padding: "16px", textDecoration: "none", marginBottom: 16 }}>
-          <span style={{ fontSize: "1.3em" }}>💬</span>
+          <Icone nome="chat" size={22} color="#052E16" />
           <span style={{ color: "#052E16", fontWeight: 800, fontSize: "0.98em" }}>Enviar comprovativo por WhatsApp</span>
         </a>
+        <p style={{ fontSize: "0.78em", color: "#8A8070", textAlign: "center", lineHeight: 1.6, margin: "-4px 0 16px" }}>
+          Ou envia o comprovativo por e-mail:{" "}
+          <a href={`mailto:${CONTACTOS.invoice}`} style={{ color: "#F59E0B", textDecoration: "none", fontWeight: 600 }}>{CONTACTOS.invoice}</a>
+        </p>
 
         <div style={{ fontSize: "0.78em", fontWeight: 700, letterSpacing: "0.08em", color: "#8A8070", marginBottom: 12 }}>
           3. CONFIRMA
@@ -2408,45 +2756,31 @@ function TrialExpiredScreen({ comprovativoEnviado, planoInicial, onComprovativo,
 // ── BOTTOM NAV ────────────────────────────────────────────────────────────────
 function BottomNav({ active, onHome, onGoals, onCharts, onSettings }) {
   const tabs = [
-    { id: "dashboard", label: "Início",      emoji: "🏠", action: onHome },
-    { id: "goals",     label: "Objectivos",  emoji: "🎯", action: onGoals },
-    { id: "charts",    label: "Gráficos",    emoji: "📊", action: onCharts },
-    { id: "settings",  label: "Definições",  emoji: "⚙️", action: onSettings },
+    { id: "dashboard", label: "Início",     icone: "home",    action: onHome },
+    { id: "goals",     label: "Objectivos", icone: "target",  action: onGoals },
+    { id: "charts",    label: "Gráficos",   icone: "chart",   action: onCharts },
+    { id: "settings",  label: "Definições", icone: "sliders", action: onSettings },
   ];
   return (
     <div style={{
       position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)",
       width: "100%", maxWidth: 480,
-      background: "#0C0C0C",
-      borderTop: "1px solid #1A1A1A",
-      display: "flex",
-      zIndex: 100,
-      paddingBottom: "env(safe-area-inset-bottom, 0px)",
+      background: "#0B0B0B", borderTop: "1px solid #1E1E1E",
+      display: "flex", zIndex: 100,
+      padding: "8px 6px 0", paddingBottom: "calc(6px + env(safe-area-inset-bottom, 0px))",
     }}>
-      {tabs.map(t => (
-        <button key={t.id} onClick={t.action}
-          style={{
-            flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
-            gap: 3, padding: "10px 8px 12px",
-            background: "transparent", border: "none", cursor: "pointer",
-            fontFamily: "inherit", transition: "all 0.15s",
-          }}>
-          <span style={{
-            fontSize: "1.5em", lineHeight: 1,
-            filter: active === t.id ? "none" : "none",
-            opacity: active === t.id ? 1 : 0.92,
-            transition: "all 0.15s",
-          }}>{t.emoji}</span>
-          <span style={{
-            fontSize: "0.62em", fontWeight: active === t.id ? 700 : 500,
-            color: active === t.id ? "#F59E0B" : "#C8C0B0",
-            letterSpacing: "0.04em",
-          }}>{t.label}</span>
-          {active === t.id && (
-            <div style={{ width: 20, height: 3, borderRadius: 2, background: "#F59E0B", marginTop: 1 }} />
-          )}
-        </button>
-      ))}
+      {tabs.map(t => {
+        const on = active === t.id;
+        return (
+          <button key={t.id} onClick={t.action} aria-current={on ? "page" : undefined}
+            style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "2px 4px 4px", background: "transparent", border: "none", cursor: "pointer", fontFamily: "inherit" }}>
+            <span style={{ width: 58, height: 30, borderRadius: 15, display: "flex", alignItems: "center", justifyContent: "center", background: on ? "rgba(245,158,11,0.16)" : "transparent", color: on ? "#F59E0B" : "#A39A88", transition: "background 0.15s" }}>
+              <Icone nome={t.icone} size={23} sw={1.9} />
+            </span>
+            <span style={{ fontSize: 11, fontWeight: on ? 800 : 600, color: on ? "#F59E0B" : "#BDB3A0" }}>{t.label}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -2487,15 +2821,15 @@ function ConviteScreen({ inviteCode, inviteCount, diasAtivos, onBack }) {
           border: "1px solid rgba(245,158,11,0.25)",
           borderRadius: 20, padding: "22px 20px", marginBottom: 20, textAlign: "center",
         }}>
-          <div style={{ fontSize: "3em", marginBottom: 8 }}>{nivel.emoji}</div>
+          <div style={{ marginBottom: 8 }}><Emo e={nivel.emoji} size={52} color="#F59E0B" /></div>
           <div style={{ fontSize: "0.65em", fontWeight: 700, letterSpacing: "0.12em", color: "#F59E0B80", marginBottom: 4 }}>
             O TEU NÍVEL
           </div>
           <div style={{ fontSize: "1.4em", fontWeight: 800, color: "#F59E0B" }}>{nivel.label}</div>
           <div style={{ fontSize: "0.78em", color: "#8A8070", marginTop: 6, lineHeight: 1.5 }}>{nivel.desc}</div>
           {nextNivel && (
-            <div style={{ marginTop: 14, fontSize: "0.72em", color: "#6A6050" }}>
-              Próximo nível: <span style={{ color: "#F59E0B80" }}>{nextNivel.emoji} {nextNivel.label}</span> em {nextNivel.dias - diasAtivos} dias
+            <div style={{ marginTop: 14, fontSize: "0.72em", color: "#9F9582" }}>
+              Próximo nível: <span style={{ color: "#F59E0B80", display: "inline-flex", alignItems: "center", gap: 4 }}><Emo e={nextNivel.emoji} size={14} color="#F59E0B80" /> {nextNivel.label}</span> em {nextNivel.dias - diasAtivos} dias
             </div>
           )}
         </div>
@@ -2507,7 +2841,7 @@ function ConviteScreen({ inviteCode, inviteCount, diasAtivos, onBack }) {
             borderRadius: 14, padding: "14px 16px", marginBottom: 20,
             display: "flex", alignItems: "center", gap: 12,
           }}>
-            <div style={{ fontSize: "1.8em" }}>🤝</div>
+            <Icone nome="users" size={32} color="#F59E0B" />
             <div>
               <div style={{ fontWeight: 700, color: "#22C55E", fontSize: "0.9em" }}>
                 {inviteCount} amigo{inviteCount !== 1 ? "s" : ""} já entraram pelo teu convite
@@ -2526,16 +2860,16 @@ function ConviteScreen({ inviteCode, inviteCount, diasAtivos, onBack }) {
           borderRadius: 16, padding: "18px 18px", marginBottom: 20,
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-            <span style={{ fontSize: "1.6em" }}>🎁</span>
+            <Icone nome="gift" size={28} color="#F59E0B" />
             <div style={{ fontSize: "1em", fontWeight: 800, color: "#22C55E" }}>Convida 1 amigo, ganha 1 mês grátis</div>
           </div>
           <div style={{ fontSize: "0.83em", color: "#A09880", lineHeight: 1.6 }}>
-            Quando um amigo entra pelo teu convite e <strong style={{ color: "#C8C0B0" }}>paga a subscrição</strong>, ganhas <strong style={{ color: "#22C55E" }}>1 mês grátis</strong>. Aplicamos na tua próxima renovação. 🌅
+            Quando um amigo entra pelo teu convite e <strong style={{ color: "#C8C0B0" }}>paga a subscrição</strong>, ganhas <strong style={{ color: "#22C55E" }}>1 mês grátis</strong>. Aplicamos na tua próxima renovação.
           </div>
         </div>
 
         {/* O que partilhas */}
-        <div style={{ fontSize: "0.68em", fontWeight: 700, letterSpacing: "0.1em", color: "#6A6050", marginBottom: 10 }}>
+        <div style={{ fontSize: "0.68em", fontWeight: 700, letterSpacing: "0.1em", color: "#9F9582", marginBottom: 10 }}>
           A MENSAGEM QUE PARTILHAS
         </div>
         <div style={{
@@ -2545,7 +2879,7 @@ function ConviteScreen({ inviteCode, inviteCount, diasAtivos, onBack }) {
           <div style={{ fontSize: "0.88em", color: "#A09880", lineHeight: 1.6 }}>
             "Descobri a Klaco — diz-me todos os dias quanto posso gastar, sem culpa. Entra pelo meu convite:"
           </div>
-          <div style={{ marginTop: 10, fontSize: "0.75em", color: "#6A6050", fontFamily: "monospace", wordBreak: "break-all" }}>
+          <div style={{ marginTop: 10, fontSize: "0.75em", color: "#9F9582", fontFamily: "monospace", wordBreak: "break-all" }}>
             {link}
           </div>
         </div>
@@ -2558,7 +2892,7 @@ function ConviteScreen({ inviteCode, inviteCount, diasAtivos, onBack }) {
             cursor: "pointer", fontFamily: "inherit", display: "flex",
             alignItems: "center", justifyContent: "center", gap: 8,
           }}>
-            <span style={{ fontSize: "1.2em" }}>📱</span> Partilhar no WhatsApp
+            <Icone nome="share" size={20} /> Partilhar no WhatsApp
           </button>
           <button onClick={handleCopy} style={{
             background: copied ? "#22C55E15" : "#0F0F0F",
@@ -2567,13 +2901,13 @@ function ConviteScreen({ inviteCode, inviteCount, diasAtivos, onBack }) {
             color: copied ? "#22C55E" : "#A09880", fontWeight: 700, fontSize: "0.9em",
             cursor: "pointer", fontFamily: "inherit",
           }}>
-            {copied ? "✓ Copiado!" : "Copiar mensagem"}
+            {copied ? "Copiado!" : "Copiar mensagem"}
           </button>
         </div>
 
         {/* Todos os níveis */}
         <div style={{ marginTop: 28 }}>
-          <div style={{ fontSize: "0.68em", fontWeight: 700, letterSpacing: "0.1em", color: "#6A6050", marginBottom: 12 }}>
+          <div style={{ fontSize: "0.68em", fontWeight: 700, letterSpacing: "0.1em", color: "#9F9582", marginBottom: 12 }}>
             OS NÍVEIS DA COMUNIDADE
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -2587,13 +2921,13 @@ function ConviteScreen({ inviteCode, inviteCount, diasAtivos, onBack }) {
                   borderRadius: 12, padding: "12px 14px",
                   opacity: atingido ? 1 : 0.4,
                 }}>
-                  <span style={{ fontSize: "1.5em" }}>{n.emoji}</span>
+                  <Emo e={n.emoji} size={26} color={atingido ? "#F59E0B" : "#8A8070"} />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 700, fontSize: "0.88em", color: atingido ? "#DDD" : "#8A8070" }}>{n.label}</div>
-                    <div style={{ fontSize: "0.7em", color: "#6A6050", marginTop: 2 }}>{n.desc}</div>
+                    <div style={{ fontSize: "0.7em", color: "#9F9582", marginTop: 2 }}>{n.desc}</div>
                   </div>
                   <div style={{ fontSize: "0.7em", color: atingido ? "#22C55E" : "#333", fontWeight: 700 }}>
-                    {atingido ? "✓" : `${n.dias}d`}
+                    {atingido ? <Icone nome="check" size={14} sw={3} /> : `${n.dias}d`}
                   </div>
                 </div>
               );
@@ -2635,7 +2969,7 @@ function ConquistaModal({ nivel, diasAtivos, inviteCode, onPartilhar, onFechar }
         padding: "32px 24px 40px",
         textAlign: "center",
       }}>
-        <div style={{ fontSize: "4em", marginBottom: 12, animation: "pulse 1.5s infinite" }}>{nivel.emoji}</div>
+        <div style={{ marginBottom: 12, animation: "pulse 1.5s infinite" }}><Emo e={nivel.emoji} size={64} color="#F59E0B" /></div>
         <div style={{ fontSize: "0.65em", fontWeight: 700, letterSpacing: "0.14em", color: "#F59E0B80", marginBottom: 6 }}>
           NÍVEL DESBLOQUEADO
         </div>
@@ -2659,10 +2993,10 @@ function ConquistaModal({ nivel, diasAtivos, inviteCode, onPartilhar, onFechar }
             background: "#25D366", border: "none", borderRadius: 14, padding: "17px",
             color: "#000", fontWeight: 800, fontSize: "0.95em", cursor: "pointer", fontFamily: "inherit",
           }}>
-            Partilhar no WhatsApp 📱
+            Partilhar no WhatsApp
           </button>
           <button onClick={onFechar} style={{
-            background: "transparent", border: "none", color: "#6A6050",
+            background: "transparent", border: "none", color: "#9F9582",
             fontSize: "0.88em", cursor: "pointer", fontFamily: "inherit", padding: "10px",
           }}>
             Agora não
@@ -2700,7 +3034,7 @@ function ConviteMomentoModal({ inviteCode, onFechar }) {
         padding: "32px 24px 44px",
       }}>
         {/* Pergunta simples, sem pressão */}
-        <div style={{ fontSize: "2em", marginBottom: 16, textAlign: "center" }}>🤝</div>
+        <div style={{ marginBottom: 16, textAlign: "center" }}><Icone nome="users" size={36} color="#F59E0B" /></div>
         <div style={{ fontSize: "1.2em", fontWeight: 800, color: "#E8E0D0", marginBottom: 10, lineHeight: 1.3 }}>
           Conheces alguém que precisava de saber isto?
         </div>
@@ -2708,7 +3042,7 @@ function ConviteMomentoModal({ inviteCode, onFechar }) {
           A maioria das pessoas não sabe quanto pode gastar hoje. Tu já sabes. Partilha com alguém que importa.
         </div>
         <div style={{ background: "#0A1A0A", border: "1px solid #22C55E30", borderRadius: 12, padding: "12px 14px", marginBottom: 24, fontSize: "0.82em", color: "#A09880", lineHeight: 1.5 }}>
-          🎁 E quando essa pessoa subscrever, ganhas <strong style={{ color: "#22C55E" }}>1 mês grátis</strong>.
+          E quando essa pessoa subscrever, ganhas <strong style={{ color: "#22C55E" }}>1 mês grátis</strong>.
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -2717,11 +3051,11 @@ function ConviteMomentoModal({ inviteCode, onFechar }) {
             padding: "17px", color: "#000", fontWeight: 800,
             fontSize: "0.95em", cursor: "pointer", fontFamily: "inherit",
           }}>
-            Partilhar no WhatsApp 📱
+            Partilhar no WhatsApp
           </button>
           <button onClick={onFechar} style={{
             background: "transparent", border: "none",
-            color: "#6A6050", fontSize: "0.88em",
+            color: "#9F9582", fontSize: "0.88em",
             cursor: "pointer", fontFamily: "inherit", padding: "10px",
           }}>
             Agora não
@@ -2758,7 +3092,7 @@ function AddEntradaScreen({ onSave, onBack }) {
       </div>
       <div style={{ padding: "0 16px" }}>
         <div style={{ fontSize: "0.86em", color: "#8A8070", marginBottom: 20, lineHeight: 1.5 }}>
-          Recebeste algo além do salário? Adiciona aqui — entra no que podes gastar este período. 🌅
+          Recebeste algo além do salário? Adiciona aqui — entra no que podes gastar este período.
         </div>
 
         <div style={S.field}>
@@ -2835,7 +3169,7 @@ function EditMovimentoModal({ tipo, item, onSave, onDelete, onClose }) {
                 {sugg.slice(0, 8).map(s => (
                   <button key={s.nome} onClick={() => setNome(s.nome)}
                     style={{ display: "flex", alignItems: "center", gap: 4, background: nome === s.nome ? "#1A1400" : "#0D0D0D", border: `1px solid ${nome === s.nome ? "#F59E0B" : "#1E1E1E"}`, borderRadius: 20, padding: "6px 12px", cursor: "pointer", fontFamily: "inherit", fontSize: "0.8em", color: nome === s.nome ? "#F59E0B" : "#A09880" }}>
-                    <span>{s.emoji}</span> {s.nome}
+                    <Emo e={s.emoji} size={15} color="currentColor" /> {s.nome}
                   </button>
                 ))}
               </div>
@@ -2857,9 +3191,9 @@ function EditMovimentoModal({ tipo, item, onSave, onDelete, onClose }) {
               {CATS.map(c => (
                 <button key={c.id} onClick={() => setCategoria(c.id)}
                   style={{ display: "flex", alignItems: "center", gap: 12, background: categoria === c.id ? "#141414" : "transparent", border: `1px solid ${categoria === c.id ? c.color : "#1E1E1E"}`, borderRadius: 12, padding: "12px 14px", cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
-                  <span style={{ fontSize: "1.3em" }}>{c.emoji}</span>
+                  <Emo e={c.emoji} size={22} color={c.color} />
                   <span style={{ flex: 1, color: categoria === c.id ? "#E8E0D0" : "#8A8070", fontWeight: categoria === c.id ? 700 : 500, fontSize: "0.92em" }}>{c.label}</span>
-                  {categoria === c.id && <span style={{ color: c.color, fontWeight: 800 }}>✓</span>}
+                  {categoria === c.id && <Icone nome="check" size={16} color={c.color} sw={3} />}
                 </button>
               ))}
             </div>
@@ -2902,10 +3236,10 @@ function AllDespesasScreen({ despesas, onEdit, onDelete, onBack }) {
         <div style={{ background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: 14, padding: "16px", marginBottom: 18, textAlign: "center" }}>
           <div style={{ fontSize: "0.75em", color: "#8A8070", marginBottom: 4 }}>TOTAL GASTO</div>
           <div style={{ fontSize: "1.6em", fontWeight: 800, color: "#EF4444" }}>{fmtKz(total)}</div>
-          <div style={{ fontSize: "0.78em", color: "#6A6050", marginTop: 2 }}>{despesas.length} despesa{despesas.length !== 1 ? "s" : ""}</div>
+          <div style={{ fontSize: "0.78em", color: "#9F9582", marginTop: 2 }}>{despesas.length} despesa{despesas.length !== 1 ? "s" : ""}</div>
         </div>
         {despesas.length === 0 ? (
-          <div style={{ textAlign: "center", color: "#6A6050", fontSize: "0.9em", padding: "40px 0" }}>Ainda não registaste despesas.</div>
+          <div style={{ textAlign: "center", color: "#9F9582", fontSize: "0.9em", padding: "40px 0" }}>Ainda não registaste despesas.</div>
         ) : (
           (() => {
             // Agrupar por data (mais recente primeiro)
@@ -2938,13 +3272,13 @@ function AllDespesasScreen({ despesas, onEdit, onDelete, onBack }) {
                       return (
                         <button key={d.id} onClick={() => setEditing(d)}
                           style={{ ...S.expenseRow, cursor: "pointer", textAlign: "left", width: "100%", fontFamily: "inherit" }}>
-                          <span style={S.expEmoji}>{cat?.emoji}</span>
+                          <span style={S.expEmoji}><Emo e={cat?.emoji} size={20} color={cat?.color} /></span>
                           <div style={{ flex: 1 }}>
                             <div style={S.expDesc}>{d.descricao}</div>
                             <div style={S.expDate}>{cat?.label}</div>
                           </div>
                           <div style={{ color: "#EF4444", fontWeight: 600 }}>-{fmtKz(d.valor)}</div>
-                          <span style={{ color: "#6A6050", marginLeft: 8, fontSize: "0.9em" }}>✎</span>
+                          <Icone nome="pencil" size={14} color="#9F9582" style={{ marginLeft: 8 }} />
                         </button>
                       );
                     })}
@@ -2980,10 +3314,10 @@ function AllEntradasScreen({ entradas, onEdit, onDelete, onBack, onAdd }) {
         <div style={{ background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: 14, padding: "16px", marginBottom: 18, textAlign: "center" }}>
           <div style={{ fontSize: "0.75em", color: "#8A8070", marginBottom: 4 }}>TOTAL DE ENTRADAS EXTRA</div>
           <div style={{ fontSize: "1.6em", fontWeight: 800, color: "#22C55E" }}>{fmtKz(total)}</div>
-          <div style={{ fontSize: "0.78em", color: "#6A6050", marginTop: 2 }}>{entradas.length} entrada{entradas.length !== 1 ? "s" : ""}</div>
+          <div style={{ fontSize: "0.78em", color: "#9F9582", marginTop: 2 }}>{entradas.length} entrada{entradas.length !== 1 ? "s" : ""}</div>
         </div>
         {entradas.length === 0 ? (
-          <div style={{ textAlign: "center", color: "#6A6050", fontSize: "0.9em", padding: "40px 0" }}>Ainda não tens entradas extra.</div>
+          <div style={{ textAlign: "center", color: "#9F9582", fontSize: "0.9em", padding: "40px 0" }}>Ainda não tens entradas extra.</div>
         ) : (
           (() => {
             const grupos = {};
@@ -3009,12 +3343,12 @@ function AllEntradasScreen({ entradas, onEdit, onDelete, onBack, onAdd }) {
                       {grupos[dataIso].map(e => (
                         <button key={e.id || e.nome} onClick={() => setEditing(e)}
                           style={{ ...S.expenseRow, cursor: "pointer", textAlign: "left", width: "100%", fontFamily: "inherit" }}>
-                          <span style={S.expEmoji}>💰</span>
+                          <span style={S.expEmoji}><Icone nome="arrowin" size={20} color="#22C55E" /></span>
                           <div style={{ flex: 1 }}>
                             <div style={S.expDesc}>{e.nome}</div>
                           </div>
                           <div style={{ color: "#22C55E", fontWeight: 600 }}>+{fmtKz(e.valor)}</div>
-                          <span style={{ color: "#6A6050", marginLeft: 8, fontSize: "0.9em" }}>✎</span>
+                          <Icone nome="pencil" size={14} color="#9F9582" style={{ marginLeft: 8 }} />
                         </button>
                       ))}
                     </div>
@@ -3057,13 +3391,13 @@ function ParabensPagamentoModal({ plano, acessoAte, onFechar }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: 24, animation: "slideUp 0.25s ease" }}>
       <div style={{ width: "100%", maxWidth: 380, background: "#0D0D0D", border: "1px solid #22C55E", borderRadius: 24, padding: "32px 24px", textAlign: "center" }}>
-        <div style={{ fontSize: "3em", marginBottom: 12 }}>🎉</div>
+        <div style={{ marginBottom: 12 }}><Icone nome="award" size={52} color="#F59E0B" /></div>
         <div style={{ fontSize: "1.3em", fontWeight: 800, color: "#E8E0D0", marginBottom: 10 }}>Parabéns!</div>
         <p style={{ color: "#A09880", fontSize: "0.95em", lineHeight: 1.6, marginBottom: 8 }}>
           O teu pagamento foi confirmado. Agora tens acesso à Klaco por <b style={{ color: "#22C55E" }}>{nomePlano}</b>.
         </p>
         {acessoAte && (
-          <p style={{ color: "#8A8070", fontSize: "0.82em", marginBottom: 24 }}>Válido até {fmtD(acessoAte)} 🌅</p>
+          <p style={{ color: "#8A8070", fontSize: "0.82em", marginBottom: 24 }}>Válido até {fmtD(acessoAte)}</p>
         )}
         <button onClick={onFechar} style={S.btn}>Continuar</button>
       </div>
@@ -3084,7 +3418,7 @@ function ConfirmarSalarioModal({ salarioAnterior, onConfirmar }) {
   return (
     <div style={S.modalOverlay}>
       <div style={S.modalCard}>
-        <div style={{ fontSize: "2.2em", textAlign: "center", marginBottom: 12 }}>🌅</div>
+        <div style={{ textAlign: "center", marginBottom: 12 }}><Sol size={44} /></div>
         <div style={{ ...S.logo, fontSize: "1.15em", textAlign: "center", marginBottom: 8 }}>Novo pagamento chegou</div>
         <p style={{ fontSize: "0.9em", color: "#A09880", lineHeight: 1.6, textAlign: "center", marginBottom: 20 }}>
           Quanto recebeste desta vez? Confirma ou ajusta, para o teu número do dia ficar certo.
@@ -3138,9 +3472,9 @@ function InstalarAppModal({ deferredPrompt, onInstalado, onFechar }) {
           <div style={{ ...S.logo, fontSize: "1.15em", textAlign: "center", marginBottom: 16 }}>Instalar no iPhone</div>
           <div style={{ background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: 14, padding: "16px 18px", marginBottom: 18 }}>
             <div style={{ fontSize: "0.84em", color: "#C8C0B0", lineHeight: 1.7, display: "flex", flexDirection: "column", gap: 10 }}>
-              <div>1. Toca em <strong style={{ color: "#F59E0B" }}>Partilhar</strong> (o quadrado com a seta ⬆️, na barra de baixo do Safari).</div>
+              <div>1. Toca em <strong style={{ color: "#F59E0B" }}>Partilhar</strong> (o quadrado com a seta <Icone nome="share" size={15} style={{ margin: "0 2px" }} />, na barra de baixo do Safari).</div>
               <div>2. Desce e escolhe <strong style={{ color: "#F59E0B" }}>“Adicionar ao ecrã principal”</strong>.</div>
-              <div>3. Toca em <strong style={{ color: "#F59E0B" }}>Adicionar</strong>. Pronto! 🌅</div>
+              <div>3. Toca em <strong style={{ color: "#F59E0B" }}>Adicionar</strong>. Pronto!</div>
             </div>
           </div>
           <button onClick={onFechar}
@@ -3156,7 +3490,7 @@ function InstalarAppModal({ deferredPrompt, onInstalado, onFechar }) {
   return (
     <div style={S.modalOverlay}>
       <div style={S.modalCard}>
-        <div style={{ fontSize: "2.4em", textAlign: "center", marginBottom: 12 }}>📲</div>
+        <div style={{ textAlign: "center", marginBottom: 12 }}><Icone nome="phone" size={44} color="#F59E0B" /></div>
         <div style={{ ...S.logo, fontSize: "1.15em", textAlign: "center", marginBottom: 10 }}>
           Leva a Klaco contigo
         </div>
@@ -3166,7 +3500,7 @@ function InstalarAppModal({ deferredPrompt, onInstalado, onFechar }) {
 
         <button onClick={instalarAndroid}
           style={{ width: "100%", background: "#F59E0B", border: "none", borderRadius: 14, padding: "15px", color: "#000", fontWeight: 800, fontSize: "0.95em", cursor: "pointer", fontFamily: "inherit", marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-          🤖 Instalar no Android
+          Instalar no Android
         </button>
         <button onClick={() => setVista("iphone")}
           style={{ width: "100%", background: "#0D0D0D", border: "1px solid #2A2A2A", borderRadius: 14, padding: "15px", color: "#E8E0D0", fontWeight: 800, fontSize: "0.95em", cursor: "pointer", fontFamily: "inherit", marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
@@ -3201,7 +3535,7 @@ function PartilharInstagramModal({ onFechar }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 200, animation: "slideUp 0.25s ease" }}>
       <div style={{ width: "100%", maxWidth: 480, background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: "24px 24px 0 0", padding: "28px 24px 40px" }}>
-        <div style={{ fontSize: "2.2em", marginBottom: 10 }}>📸</div>
+        <div style={{ marginBottom: 10 }}><Icone nome="camera" size={40} color="#F59E0B" /></div>
         <div style={{ fontSize: "1.1em", fontWeight: 800, color: "#E8E0D0", marginBottom: 8 }}>Que bom que estás a gostar!</div>
         <p style={{ color: "#A09880", fontSize: "0.9em", lineHeight: 1.6, marginBottom: 20 }}>
           Partilha a tua experiência e marca-nos: <span style={{ color: "#F59E0B", fontWeight: 700 }}>@klacoapp</span>
@@ -3213,7 +3547,7 @@ function PartilharInstagramModal({ onFechar }) {
 
         <button onClick={handleCopiar}
           style={{ width: "100%", background: "transparent", border: "1px solid #2A2A2A", borderRadius: 14, padding: "14px", color: copiado ? "#22C55E" : "#E8E0D0", fontWeight: 700, fontSize: "0.92em", cursor: "pointer", fontFamily: "inherit", marginBottom: 10 }}>
-          {copiado ? "✓ Legenda copiada" : "Copiar legenda"}
+          {copiado ? "Legenda copiada" : "Copiar legenda"}
         </button>
 
         <button onClick={handleAbrirInstagram} style={{ ...S.btn, marginBottom: 10 }}>
@@ -3239,16 +3573,14 @@ function AvaliacaoModal({ onEnviar, onFechar, avaliacaoAnterior }) {
       <div style={S.modalCard}>
         {onFechar && (
           <button onClick={onFechar}
-            style={{ position: "absolute", top: 16, right: 16, background: "transparent", border: "none", color: "#8A8070", fontSize: "1.3em", cursor: "pointer", fontFamily: "inherit", lineHeight: 1 }}>
-            ✕
-          </button>
+            style={{ position: "absolute", top: 16, right: 16, background: "transparent", border: "none", color: "#8A8070", fontSize: "1.3em", cursor: "pointer", fontFamily: "inherit", lineHeight: 1 }}><Icone nome="x" size={20} /></button>
         )}
-        <div style={{ fontSize: "2.2em", textAlign: "center", marginBottom: 10 }}>🌅</div>
+        <div style={{ textAlign: "center", marginBottom: 10 }}><Sol size={40} /></div>
         <div style={{ ...S.logo, fontSize: "1.1em", textAlign: "center", marginBottom: 8 }}>
           Estás a gostar da Klaco?
         </div>
         <p style={{ fontSize: "0.86em", color: "#A09880", lineHeight: 1.5, textAlign: "center", marginBottom: 20 }}>
-          A tua opinião ajuda-nos a melhorar. Leva só um segundo. 🙏
+          A tua opinião ajuda-nos a melhorar. Leva só um segundo.
         </p>
 
         {/* Estrelas */}
@@ -3259,7 +3591,7 @@ function AvaliacaoModal({ onEnviar, onFechar, avaliacaoAnterior }) {
               onMouseEnter={() => setHover(n)}
               onMouseLeave={() => setHover(0)}
               style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: "2.1em", lineHeight: 1, padding: 2, fontFamily: "inherit", transition: "transform 0.1s", transform: (hover || estrelas) >= n ? "scale(1.1)" : "scale(1)" }}>
-              <span style={{ filter: (hover || estrelas) >= n ? "none" : "grayscale(1) opacity(0.35)" }}>⭐</span>
+              <Icone nome={(hover || estrelas) >= n ? "starFull" : "star"} size={34} color={(hover || estrelas) >= n ? "#F59E0B" : "#4A4438"} />
             </button>
           ))}
         </div>
@@ -3296,14 +3628,14 @@ function NotifConsentModal({ onGuardar }) {
 
   const Check = ({ ativo }) => (
     <div style={{ width: 24, height: 24, borderRadius: 7, border: `2px solid ${ativo ? "#F59E0B" : "#3A3A3A"}`, background: ativo ? "#F59E0B" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "all 0.15s" }}>
-      {ativo && <span style={{ color: "#000", fontWeight: 800, fontSize: "0.85em" }}>✓</span>}
+      {ativo && <Icone nome="check" size={12} color="#000" sw={3.2} />}
     </div>
   );
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 250, animation: "slideUp 0.3s ease" }}>
       <div style={{ width: "100%", maxWidth: 480, background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: "24px 24px 0 0", padding: "28px 24px 36px" }}>
-        <div style={{ fontSize: "1.6em", marginBottom: 8 }}>🌅</div>
+        <div style={{ marginBottom: 8 }}><Sol size={30} /></div>
         <div style={{ fontSize: "1.2em", fontWeight: 800, color: "#E8E0D0", marginBottom: 6 }}>Como queres que a Klaco fale contigo?</div>
         <p style={{ fontSize: "0.86em", color: "#8A8070", marginBottom: 22, lineHeight: 1.5 }}>
           Escolhe o que preferes receber. Podes mudar isto quando quiseres nas Definições.
@@ -3314,7 +3646,7 @@ function NotifConsentModal({ onGuardar }) {
           <Check ativo={lembrete} />
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: "0.95em", fontWeight: 700, color: "#E8E0D0" }}>Lembrete diário</div>
-            <div style={{ fontSize: "0.8em", color: "#8A8070", marginTop: 2 }}>Saber quanto podes gastar hoje 🌅</div>
+            <div style={{ fontSize: "0.8em", color: "#8A8070", marginTop: 2 }}>Saber quanto podes gastar hoje</div>
           </div>
         </button>
 
@@ -3328,7 +3660,7 @@ function NotifConsentModal({ onGuardar }) {
         </button>
 
         <button onClick={() => onGuardar({ lembrete, novidades })} style={S.btn}>Guardar</button>
-        <p style={{ fontSize: "0.74em", color: "#6A6050", textAlign: "center", marginTop: 12, lineHeight: 1.4 }}>
+        <p style={{ fontSize: "0.74em", color: "#9F9582", textAlign: "center", marginTop: 12, lineHeight: 1.4 }}>
           Se não escolheres nada, não recebes notificações. Sem problema.
         </p>
       </div>
@@ -3444,10 +3776,21 @@ function AdminScreen({ onBack }) {
     }
   };
 
-  const hoje = new Date().toISOString().slice(0, 10);
+  // Classificação (datas em Africa/Luanda; acesso_ate é inclusiva):
+  //  - admin: perfis.is_admin === true (única fonte) — sem estado/validade;
+  //  - ativo: subscrição paga com validade não anterior a hoje;
+  //  - expirado: subscrição paga já vencida (ou sem validade válida) OU teste de 7 dias já terminado;
+  //  - trial: teste ainda em curso. Não altera nada na base de dados.
+  const ehAdminPerfil = (p) => p.is_admin === true;
   const estadoReal = (p) => {
-    if (p.estado === "ativo" && p.acesso_ate && p.acesso_ate >= hoje) return "ativo";
-    if (p.estado === "ativo" && p.acesso_ate && p.acesso_ate < hoje) return "expirado";
+    if (ehAdminPerfil(p)) return "admin";
+    if (p.estado === "ativo") return acessoPagoValido("ativo", p.acesso_ate) ? "ativo" : "expirado";
+    if (p.estado === "expirado") return "expirado";
+    // Validade já passada = expirada, tal como o bloqueio de acesso da app (acessoExpirado), mesmo que
+    // o estado guardado ainda seja "trial".
+    if (acessoExpirado(p.acesso_ate)) return "expirado";
+    const inicio = dataLuanda(p.trial_inicio);
+    if (inicio && diasEntreDatas(inicio, hojeLuanda()) >= TRIAL_DAYS) return "expirado";
     return p.estado || "trial";
   };
 
@@ -3463,6 +3806,11 @@ function AdminScreen({ onBack }) {
   });
 
   const corEstado = (e) => e === "ativo" ? "#22C55E" : e === "expirado" ? "#EF4444" : "#F59E0B";
+  // Teste terminado distingue-se de subscrição paga expirada; administradores mostram ADMIN.
+  const rotuloEstado = (p, e) => e === "admin" ? "ADMIN" : (e === "expirado" && !p.acesso_ate && p.estado !== "ativo" && p.estado !== "expirado") ? "teste terminado" : e;
+  const estiloChip = (e, tam) => e === "admin"
+    ? { padding: "3px 10px", borderRadius: 20, background: "#F59E0B", color: "#080808", fontSize: tam, fontWeight: 800, letterSpacing: "0.08em" }
+    : { padding: "3px 10px", borderRadius: 20, background: corEstado(e) + "22", color: corEstado(e), fontSize: tam, fontWeight: 700 };
 
   // ── Detalhe de um utilizador ──
   if (selecionado) {
@@ -3478,12 +3826,16 @@ function AdminScreen({ onBack }) {
           <div style={{ background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: 16, padding: 18, marginBottom: 16 }}>
             <div style={{ fontSize: "1.1em", fontWeight: 800, color: "#E8E0D0", marginBottom: 4 }}>{selecionado.nome || "(sem nome)"}</div>
             <div style={{ fontSize: "0.85em", color: "#8A8070" }}>{selecionado.email || selecionado.telefone || "—"}</div>
-            <div style={{ display: "inline-block", marginTop: 10, padding: "3px 10px", borderRadius: 20, background: corEstado(est) + "22", color: corEstado(est), fontSize: "0.78em", fontWeight: 700 }}>{est}</div>
+            <div style={{ display: "inline-block", marginTop: 10, ...estiloChip(est, "0.78em") }}>{rotuloEstado(selecionado, est)}</div>
             <div style={{ marginTop: 14, fontSize: "0.82em", color: "#A09880", lineHeight: 1.8 }}>
-              <div>Plano: {selecionado.plano || "—"}</div>
-              <div>Início do trial: {selecionado.trial_inicio || "—"}</div>
-              <div>Acesso até: {selecionado.acesso_ate || "—"}</div>
-              <div style={{ fontSize: "0.9em", color: "#6A6050", marginTop: 4, wordBreak: "break-all" }}>ID: {selecionado.id}</div>
+              {est !== "admin" && (
+                <>
+                  <div>Plano: {selecionado.plano || "—"}</div>
+                  <div>Início do trial: {selecionado.trial_inicio || "—"}</div>
+                  <div>Acesso até: {selecionado.acesso_ate || "—"}</div>
+                </>
+              )}
+              <div style={{ fontSize: "0.9em", color: "#9F9582", marginTop: 4, wordBreak: "break-all" }}>ID: {selecionado.id}</div>
             </div>
           </div>
 
@@ -3579,7 +3931,7 @@ function AdminScreen({ onBack }) {
                   <div style={{ color: "#E8E0D0", fontWeight: 700, fontSize: "0.92em" }}>{p.nome || "(sem nome)"}</div>
                   <div style={{ color: "#8A8070", fontSize: "0.78em", marginTop: 2 }}>{p.email || p.telefone || "—"}</div>
                 </div>
-                <div style={{ padding: "3px 10px", borderRadius: 20, background: corEstado(est) + "22", color: corEstado(est), fontSize: "0.74em", fontWeight: 700 }}>{est}</div>
+                <div style={estiloChip(est, "0.74em")}>{rotuloEstado(p, est)}</div>
               </button>
             );
           })
@@ -3608,6 +3960,9 @@ export default function App() {
   const [bloqueado, setBloqueado] = useState(false); // ecrã de PIN a bloquear o acesso
   const [definirPin, setDefinirPin] = useState(false); // mostrar ecrã de criar PIN
   const [isAdmin, setIsAdmin] = useState(false); // perfil.is_admin — mostra painel de admin
+  const [notificacoes, setNotificacoes] = useState([]);           // lista vinda de public.notificacoes
+  const [mostrarNotificacoes, setMostrarNotificacoes] = useState(false);
+  const lembretesExecutadosPara = useRef(null); // userId para o qual gerar-lembretes já correu nesta sessão
   const saveTimer = useRef(null);
   // SÓ permitir gravar em perfis.dados DEPOIS de o perfil ter sido carregado do Supabase.
   // Isto impede que o estado inicial vazio sobrescreva (apague) os dados já guardados.
@@ -3711,7 +4066,7 @@ export default function App() {
   useEffect(() => {
     if (!userId) return;
     // Só faz sentido enquanto a conta ainda não está paga/válida.
-    const jaPaga = state.estadoConta === "ativo" && state.acessoAte && state.acessoAte >= todayStr();
+    const jaPaga = acessoPagoValido(state.estadoConta, state.acessoAte);
     if (jaPaga) return;
     let vivo = true;
     const intervalo = setInterval(async () => {
@@ -3773,20 +4128,17 @@ export default function App() {
   // O trial_inicio vem do Supabase e não pode ser manipulado no navegador.
   // state.setupDate fica apenas como fallback para contas antigas sem trial_inicio.
   const inicioTrial = state.trialInicio || state.setupDate || null;
-  const trialDaysUsed = inicioTrial ? daysSince(inicioTrial) : 0;
+  const trialDaysUsed = inicioTrial ? diasDesdeLuanda(inicioTrial) : 0; // dias de calendário em Africa/Luanda
   const trialDaysLeft = Math.max(0, TRIAL_DAYS - trialDaysUsed);
-  // Contas com acesso sempre livre (dona/equipa) — nunca expiram no trial.
-  // [DEV] Quando o Supabase estiver ligado, mover isto para a base de dados
-  //       (marcar a conta como estado='ativo' permanente), em vez de estar no código.
-  const CONTAS_LIVRES = ["jezreelalfredo@hotmail.com"];
-  const contaLivre = state.email && CONTAS_LIVRES.includes(String(state.email).trim().toLowerCase());
   // Estado REAL da subscrição (calculado da data, não só de estadoConta):
   // - contaPaga: estado 'ativo' no servidor E acesso ainda válido (data no futuro)
   // - subscricaoExpirada: já teve um plano pago (tem acessoAte) mas a data já passou
-  const contaPaga = state.estadoConta === "ativo" && state.acessoAte && state.acessoAte >= todayStr();
-  const subscricaoExpirada = !!state.acessoAte && state.acessoAte < todayStr();
+  const contaPaga = acessoPagoValido(state.estadoConta, state.acessoAte);
+  const subscricaoExpirada = acessoExpirado(state.acessoAte);
   // Bloqueio: trial gratuito esgotado OU subscrição paga expirada (ambos exigem pagar).
-  const trialExpired = state.setup && !isAdmin && !contaLivre && !contaPaga &&
+  // Isto é apresentação (UI), não autorização: a autoridade é a base de dados
+  // (is_admin, estado, plano, acesso_ate, trial_inicio), que o cliente não consegue alterar.
+  const trialExpired = state.setup && !isAdmin && !contaPaga &&
     (subscricaoExpirada || trialDaysUsed >= TRIAL_DAYS);
 
   const handleDispensarDica = () => {
@@ -3854,6 +4206,7 @@ export default function App() {
   const limparSessaoLocal = () => {
     podeGravar.current = false;
     metricasPendentes.current = { uid: null, gasto: false, rendimento: false };
+    setNotificacoes([]); setMostrarNotificacoes(false);
     setUserId(null);
     try { window.localStorage.removeItem("klaco_state"); } catch (e) {}
     setState(INIT);
@@ -4069,11 +4422,51 @@ export default function App() {
 
   // Deteta quando a conta passou a ativa (pagamento confirmado) e ainda não celebrou
   useEffect(() => {
-    const paga = state.estadoConta === "ativo" && state.acessoAte && state.acessoAte >= todayStr();
+    const paga = acessoPagoValido(state.estadoConta, state.acessoAte);
     if (paga && !state.parabensPagamentoVisto && state.setup) {
       setMostrarParabens(true);
     }
   }, [state.estadoConta, state.acessoAte, state.parabensPagamentoVisto, state.setup]);
+
+  // Notificações: uma vez por sessão (por utilizador), depois de a sessão e o perfil estarem prontos,
+  // gera os lembretes no servidor (dry_run:false) e carrega a lista. Erros não bloqueiam nada.
+  useEffect(() => {
+    if (!userId) { lembretesExecutadosPara.current = null; return; }
+    if (aCarregar || !authReady || !state.setup) return;
+    if (lembretesExecutadosPara.current === userId) return;
+    lembretesExecutadosPara.current = userId;
+    let vivo = true;
+    (async () => {
+      await executarGerarLembretes();
+      const lista = await carregarNotificacoes(userId);
+      if (vivo && lista) setNotificacoes(lista);
+    })();
+    return () => { vivo = false; };
+  }, [userId, aCarregar, authReady, state.setup]);
+
+  // Ao voltar à app, atualiza a lista (ex.: pagamento aprovado entretanto).
+  useEffect(() => {
+    if (!userId) return;
+    const aoVoltar = async () => {
+      if (document.visibilityState !== "visible") return;
+      const lista = await carregarNotificacoes(userId);
+      if (lista) setNotificacoes(lista);
+    };
+    document.addEventListener("visibilitychange", aoVoltar);
+    return () => document.removeEventListener("visibilitychange", aoVoltar);
+  }, [userId]);
+
+  const abrirNotificacoes = async () => {
+    setMostrarNotificacoes(true);
+    if (!userId) return;
+    const lista = await carregarNotificacoes(userId);
+    if (lista) setNotificacoes(lista);
+  };
+  // O contador só muda depois de o servidor confirmar a atualização de lida/lida_em.
+  const marcarLidas = async (ids) => {
+    const ok = await marcarNotificacoesLidas(ids);
+    if (ok) setNotificacoes(prev => prev.map(n => ids.includes(n.id) ? { ...n, lida: true } : n));
+  };
   const [mostrarAvaliacao, setMostrarAvaliacao] = useState(false); // modal de avaliação (estrelas)
   const [mostrarPartilhaInstagram, setMostrarPartilhaInstagram] = useState(false); // convite Instagram (4-5 estrelas)
   const [avaliacaoManual, setAvaliacaoManual] = useState(false);   // aberta pelas Definições (pode fechar sempre)
@@ -4211,7 +4604,7 @@ export default function App() {
     return (
       <div style={{ ...S.app, display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh" }}>
         <div style={{ textAlign: "center" }}>
-          <div style={{ fontSize: "2.5em", marginBottom: 12 }}>🌅</div>
+          <div style={{ marginBottom: 12 }}><Sol size={44} /></div>
           <div style={{ color: "#8A8070", fontSize: "0.9em" }}>A carregar…</div>
         </div>
       </div>
@@ -4312,6 +4705,11 @@ export default function App() {
             onOpenGoals={() => setScreen("goals")}
             onSettings={() => setScreen("settings")}
             onOpenConvite={() => setScreen("convite")}
+            notifNaoLidas={notificacoes.filter(n => n.lida !== true).length}
+            onAbrirNotificacoes={abrirNotificacoes}
+            bannerPagar={state.setup && !isAdmin && !trialExpired && !contaPaga
+              ? <BannerPagarJa dias={trialDaysLeft} onPagar={() => setMostrarPagarJa(true)} />
+              : null}
           />
           {/* Confirmação de rendimento — só para quem tem rendimento variável, quando muda o período */}
           {state.setup && state.rendimentoVariavel && state.periodoSalarioConfirmado !== state.dataRecebimento && (
@@ -4326,31 +4724,13 @@ export default function App() {
           {state.setup && !state.dicaRegistoMostrada && trialDaysUsed >= 1 && trialDaysUsed <= 3 && (
             <div style={{ padding: "0 16px 12px" }}>
               <div style={{ background: "#141000", border: "1px solid #2A2010", borderRadius: 14, padding: "16px", display: "flex", alignItems: "flex-start", gap: 12 }}>
-                <span style={{ fontSize: "1.3em" }}>🌅</span>
+                <Sol size={26} />
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: "0.9em", fontWeight: 700, color: "#E8E0D0", marginBottom: 3 }}>Faz o teu número ficar mais certo</div>
                   <div style={{ fontSize: "0.82em", color: "#A09880", lineHeight: 1.5 }}>Sempre que gastas, regista. Quanto mais registas, mais real fica o que podes gastar.</div>
                 </div>
                 <button onClick={handleDispensarDica}
-                  style={{ background: "transparent", border: "none", color: "#8A8070", cursor: "pointer", fontSize: "1.1em", flexShrink: 0, fontFamily: "inherit" }}>✕</button>
-              </div>
-            </div>
-          )}
-          {/* Bloco de subscrição — só durante o teste, escondido quando a conta está paga */}
-          {state.setup && !trialExpired && !contaPaga && (
-            <div style={{ padding: "8px 16px 20px" }}>
-              <div style={{ background: "linear-gradient(160deg,#0F0C00,#0A0800)", border: `1px solid ${trialDaysLeft <= 3 ? "rgba(239,68,68,0.3)" : "rgba(245,158,11,0.2)"}`, borderRadius: 20, padding: "20px", display: "flex", alignItems: "center", gap: 16 }}>
-                <AnelContagem diasRestantes={trialDaysLeft} />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: "1em", fontWeight: 800, color: "#F59E0B", lineHeight: 1.2, marginBottom: 4 }}>Paga já e poupa 50%</div>
-                  <div style={{ fontSize: "0.78em", color: "#A09880", lineHeight: 1.4, marginBottom: 10 }}>
-                    Só enquanto durar o teu período gratuito. 🌅
-                  </div>
-                  <button onClick={() => setMostrarPagarJa(true)}
-                    style={{ background: "#F59E0B", border: "none", borderRadius: 10, padding: "9px 16px", color: "#000", fontWeight: 800, fontSize: "0.82em", cursor: "pointer", fontFamily: "inherit" }}>
-                    Pagar já →
-                  </button>
-                </div>
+                  style={{ background: "transparent", border: "none", color: "#BDB3A0", cursor: "pointer", flexShrink: 0, fontFamily: "inherit", padding: 4 }}><Icone nome="x" size={18} /></button>
               </div>
             </div>
           )}
@@ -4359,7 +4739,7 @@ export default function App() {
         </>
       )}
       {screen === "admin"      && <AdminScreen onBack={() => setScreen("settings")} />}
-      {screen === "settings"   && <SettingsScreen state={state} onToggleNotif={handleToggleNotif} onBack={() => setScreen("dashboard")} onEditarDados={() => setScreen("editarDados")} onVerDespesas={() => setScreen("todasDespesas")} onVerEntradas={() => setScreen("todasEntradas")} onOpenConvite={() => setScreen("convite")} onVerEtiquetas={() => setScreen("etiquetas")} onOpenPlano={() => setMostrarPagarJa(true)} planoSub={contaPaga ? `Conta ativa${state.planoAtivo ? " · " + (state.planoAtivo === "anual" ? "Anual" : "Mensal") : ""}` : (trialExpired ? "O teu período gratuito terminou — subscreve" : `Período gratuito — ${trialDaysLeft} dias restantes`)} onOpenAvaliacao={() => { setAvaliacaoManual(true); setMostrarAvaliacao(true); }} isAdmin={isAdmin} onOpenAdmin={() => setScreen("admin")} onLogout={handleLogout} />}
+      {screen === "settings"   && <SettingsScreen state={state} onToggleNotif={handleToggleNotif} onBack={() => setScreen("dashboard")} onEditarDados={() => setScreen("editarDados")} onVerDespesas={() => setScreen("todasDespesas")} onVerEntradas={() => setScreen("todasEntradas")} onOpenConvite={() => setScreen("convite")} onVerEtiquetas={() => setScreen("etiquetas")} onOpenPlano={() => setMostrarPagarJa(true)} planoSub={contaPaga ? `Conta ativa${state.planoAtivo ? " · " + (state.planoAtivo === "anual" ? "Anual" : "Mensal") : ""}` : (trialExpired ? "O teu período gratuito terminou — subscreve" : `Período gratuito — ${trialDaysLeft} dias restantes`)} onOpenAvaliacao={() => { setAvaliacaoManual(true); setMostrarAvaliacao(true); }} isAdmin={isAdmin} onOpenAdmin={() => setScreen("admin")} onLogout={handleLogout} diasTeste={trialDaysLeft} />}
       {screen === "etiquetas"  && <EtiquetasScreen etiquetasCustom={state.etiquetasCustom || {}} onDelete={handleDeleteEtiqueta} onBack={() => setScreen("settings")} />}
       {screen === "editarDados" && <EditarDadosScreen state={state} onSave={handleSettingsSave} onBack={() => setScreen("settings")} />}
       {screen === "convite"     && <ConviteScreen inviteCode={state.inviteCode} inviteCount={state.inviteCount} diasAtivos={diasAtivos} onBack={() => setScreen("dashboard")} />}
@@ -4419,6 +4799,11 @@ export default function App() {
         />
       )}
 
+      {/* Notificações */}
+      {mostrarNotificacoes && (
+        <NotificacoesModal itens={notificacoes} onFechar={() => setMostrarNotificacoes(false)} onMarcarLidas={marcarLidas} />
+      )}
+
       {/* Convite a partilhar no Instagram — só para 4-5 estrelas, uma vez */}
       {mostrarPartilhaInstagram && (
         <PartilharInstagramModal onFechar={() => setMostrarPartilhaInstagram(false)} />
@@ -4462,7 +4847,7 @@ const S = {
   currency: { fontSize: "1em", color: "#F59E0B", fontWeight: 700 },
   bigInput: { flex: 1, background: "transparent", border: "none", outline: "none", fontSize: "2em", fontWeight: 800, color: "#E8E0D0", fontFamily: "inherit", width: "100%" },
   dateInput: { width: "100%", background: "#080808", border: "1px solid #222", borderRadius: 12, padding: "16px 18px", color: "#E8E0D0", fontSize: "1em", fontFamily: "inherit", outline: "none", marginTop: 6 },
-  dateTip: { fontSize: "0.82em", color: "#6A6050", marginTop: 10, textAlign: "center" },
+  dateTip: { fontSize: "0.82em", color: "#9F9582", marginTop: 10, textAlign: "center" },
   preview: { marginTop: 20, display: "flex", flexDirection: "column", gap: 12 },
   previewRow: { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.92em" },
   btn: { width: "100%", background: "#F59E0B", border: "none", borderRadius: 14, padding: "17px", color: "#000", fontSize: "1em", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", letterSpacing: "-0.01em" },
@@ -4473,7 +4858,7 @@ const S = {
   valQ: { fontSize: "0.95em", color: "#C8C0B0", lineHeight: 1.6, marginBottom: 12 },
   valOptions: { display: "flex", flexDirection: "column", gap: 10 },
   valOption: { background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: 14, padding: "14px 18px", cursor: "pointer", fontFamily: "inherit", fontSize: "0.95em", textAlign: "left", transition: "all 0.2s" },
-  valLabel: { fontSize: "0.8em", fontWeight: 700, letterSpacing: "0.08em", color: "#6A6050", display: "block", marginBottom: 6 },
+  valLabel: { fontSize: "0.8em", fontWeight: 700, letterSpacing: "0.08em", color: "#9F9582", display: "block", marginBottom: 6 },
 
   // Dashboard
   header: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "24px 20px 14px" },
@@ -4481,24 +4866,24 @@ const S = {
   iconBtn: { background: "transparent", border: "none", borderRadius: 10, padding: "8px", color: "#2A2A2A", cursor: "pointer", fontSize: "1.1em" },
 
   // Hero — O número que liberta
-  heroCard: { margin: "0 16px 24px", background: "linear-gradient(160deg,#141000,#0A0800)", border: "1px solid rgba(245,158,11,0.15)", borderRadius: 24, padding: "32px 24px" },
+  heroCard: { margin: "10px 16px 20px", background: "linear-gradient(160deg,#141000,#0A0800)", border: "1px solid rgba(245,158,11,0.30)", borderRadius: 22, padding: "22px 22px 18px" },
   heroLabel: { fontSize: "0.72em", fontWeight: 700, letterSpacing: "0.14em", color: "#8A7040", marginBottom: 10 },
-  heroAmount: { fontSize: "3.2em", fontWeight: 800, color: "#F59E0B", letterSpacing: "-0.03em", lineHeight: 1 },
+  heroAmount: { fontSize: "2.7em", fontWeight: 800, color: "#F59E0B", letterSpacing: "-0.03em", lineHeight: 1.05 },
   heroSub: { fontSize: "0.88em", color: "#6A5030", marginTop: 10 },
-  heroDivider: { height: 1, background: "rgba(245,158,11,0.08)", margin: "20px 0" },
+  heroDivider: { height: 1, background: "rgba(245,158,11,0.20)", margin: "16px 0 14px" },
   heroRow: { display: "flex", justifyContent: "space-between" },
-  heroSmallLabel: { fontSize: "0.75em", color: "#6A5030", marginBottom: 4 },
+  heroSmallLabel: { fontSize: "0.78em", color: "#9F9582", fontWeight: 600, marginBottom: 4 },
   heroSmall: { fontSize: "1em", fontWeight: 700, color: "#C8A040" },
 
   // Categories
-  sectionLabel: { fontSize: "0.75em", fontWeight: 700, letterSpacing: "0.1em", color: "#6A6050", padding: "0 20px", marginBottom: 12 },
+  sectionLabel: { fontSize: "0.75em", fontWeight: 700, letterSpacing: "0.1em", color: "#9F9582", padding: "0 20px", marginBottom: 12 },
   categoryList: { display: "flex", flexDirection: "column", gap: 8, padding: "0 16px", marginBottom: 24 },
-  categoryCard: { background: "#0D0D0D", border: "1px solid #161616", borderRadius: 16, padding: "16px" },
+  categoryCard: { background: "#101010", border: "1px solid #1C1C1C", borderRadius: 18, padding: "14px 16px" },
   catHeader: { display: "flex", alignItems: "center", gap: 12, marginBottom: 12 },
   catEmoji: { fontSize: "1.3em", lineHeight: 1 },
   catName: { fontSize: "0.95em", fontWeight: 700, color: "#E8E0D0" },
-  catLimit: { fontSize: "0.82em", color: "#6A6050", marginTop: 2 },
-  barBg: { height: 4, background: "#161616", borderRadius: 2, overflow: "hidden" },
+  catLimit: { fontSize: "0.82em", color: "#9F9582", marginTop: 2 },
+  barBg: { height: 5, background: "#1E1E1E", borderRadius: 3, overflow: "hidden" },
   barFill: { height: "100%", borderRadius: 2, transition: "width 0.5s ease" },
   overAlert: { fontSize: "0.82em", color: "#EF4444", marginTop: 8, fontWeight: 600 },
 
@@ -4507,7 +4892,7 @@ const S = {
   expenseRow: { display: "flex", alignItems: "center", gap: 12, background: "#0D0D0D", border: "1px solid #161616", borderRadius: 14, padding: "13px 16px" },
   expEmoji: { fontSize: "1.1em" },
   expDesc: { fontSize: "0.92em", fontWeight: 600, color: "#E8E0D0" },
-  expDate: { fontSize: "0.78em", color: "#6A6050", marginTop: 2 },
+  expDate: { fontSize: "0.78em", color: "#9F9582", marginTop: 2 },
   addBtn: { flex: 1, background: "#F59E0B", border: "none", borderRadius: 14, padding: "17px", color: "#000", fontWeight: 800, fontSize: "0.95em", cursor: "pointer", fontFamily: "inherit" },
 
   // Shared
