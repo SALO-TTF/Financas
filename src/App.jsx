@@ -346,30 +346,50 @@ async function executarGerarLembretes() {
 // ── Termos de Uso: aceitação registada no servidor ────────────────────────────
 // A data NUNCA é enviada pelo navegador: a RPC public.aceitar_termos grava now() do servidor e a
 // versão aceite; as colunas termos_aceites_em/termos_versao não são escritas directamente pelo cliente.
-// (SQL entregue em supabase/sql-para-revisao/20261116090000_termos_aceitacao.sql — executar manualmente.)
+// (SQL: supabase/sql-para-revisao/20261116090000_termos_aceitacao.sql e 20261117170000_termos_aceitacao_todos.sql.)
 const CHAVE_TERMOS_PENDENTE = "klaco_termos_pendente";
+// Devolve { ok, codigo }. O servidor só aceita a versão vigente (codigo "versao_nao_vigente" se não for).
 async function aceitarTermos(versao = LEGAL_VERSAO) {
   try {
     const { data, error } = await supabase.rpc("aceitar_termos", { p_versao: versao });
-    if (error) { console.error("aceitar_termos:", error.message); return false; }
-    if (data?.ok !== true) { console.error("aceitar_termos:", data?.codigo || data); return false; }
-    return true;
-  } catch (e) { console.error("aceitar_termos:", e); return false; }
+    if (error) { console.error("aceitar_termos:", error.message); return { ok: false, codigo: "erro" }; }
+    if (data?.ok !== true) { console.error("aceitar_termos:", data?.codigo || data); return { ok: false, codigo: data?.codigo || "erro" }; }
+    return { ok: true, codigo: data?.ja_aceite ? "ja_aceite" : "aceite" };
+  } catch (e) { console.error("aceitar_termos:", e); return { ok: false, codigo: "erro" }; }
 }
 // O visto dado no registo fica pendente até existir sessão (depois do código de confirmação).
+// Se a versão marcada já não for a vigente, o pedido é descartado e a confirmação é feita no ecrã
+// de aceitação com a versão vigente.
 async function registarAceitacaoPendente() {
   let versao = null;
   try { versao = window.localStorage.getItem(CHAVE_TERMOS_PENDENTE); } catch (e) {}
   if (!versao) return;
-  if (await aceitarTermos(versao)) { try { window.localStorage.removeItem(CHAVE_TERMOS_PENDENTE); } catch (e) {} }
+  const r = await aceitarTermos(versao);
+  if (r.ok || r.codigo === "versao_nao_vigente" || r.codigo === "versao_invalida") {
+    try { window.localStorage.removeItem(CHAVE_TERMOS_PENDENTE); } catch (e) {}
+  }
 }
-// Pergunta ao servidor se ESTA conta tem de aceitar os termos (só contas criadas depois de a
-// obrigatoriedade entrar em vigor) e se já aceitou. Em caso de erro devolve null: nunca bloqueia.
+// Texto de uma versão legal gravado no Supabase (versões futuras). Só é aceite se tiver o formato
+// de src/legal.js (termos, reembolso e seguranca com seccoes). Devolve null se não houver.
+async function conteudoTermos(versao) {
+  try {
+    const { data, error } = await supabase.rpc("termos_conteudo", { p_versao: versao });
+    if (error || data?.ok !== true) { console.error("termos_conteudo:", error?.message || data?.codigo); return null; }
+    const c = data.conteudo;
+    const valido = c && ORDEM_DOCS_LEGAIS.every(id => c[id] && c[id].titulo && Array.isArray(c[id].seccoes));
+    return valido ? c : null;
+  } catch (e) { console.error("termos_conteudo:", e); return null; }
+}
+// Pergunta ao servidor qual é a versão legal vigente e se este utilizador já a aceitou.
+// Devolve null se falhar ou se a resposta estiver incompleta: quem chama trata isso como erro
+// (nunca como aceite).
 async function estadoTermos() {
   try {
     const { data, error } = await supabase.rpc("termos_estado");
     if (error) { console.error("termos_estado:", error.message); return null; }
-    return data?.ok === true ? data : null;
+    if (data?.ok !== true || typeof data.obrigatorio !== "boolean" || typeof data.aceite !== "boolean") return null;
+    if (data.obrigatorio && !data.versao_atual) return null;
+    return data;
   } catch (e) { console.error("termos_estado:", e); return null; }
 }
 
@@ -918,8 +938,8 @@ function BlocoLegal({ bloco }) {
   }
   return null;
 }
-function DocumentoLegal({ docId, onFechar, onAbrir }) {
-  const doc = DOCS_LEGAIS[docId];
+function DocumentoLegal({ docId, onFechar, onAbrir, docs = DOCS_LEGAIS }) {
+  const doc = docs[docId];
   const topo = useRef(null);
   useEffect(() => { try { if (topo.current) topo.current.scrollTop = 0; } catch (e) {} }, [docId]);
   if (!doc) return null;
@@ -948,7 +968,7 @@ function DocumentoLegal({ docId, onFechar, onAbrir }) {
             {outros.map(id => (
               <button key={id} onClick={() => onAbrir(id)}
                 style={{ display: "block", width: "100%", textAlign: "left", background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: 12, padding: "13px 14px", marginBottom: 8, color: "#F59E0B", fontWeight: 700, fontSize: "0.9em", cursor: "pointer", fontFamily: "inherit" }}>
-                {DOCS_LEGAIS[id].titulo}
+                {docs[id] ? docs[id].titulo : id}
               </button>
             ))}
           </div>
@@ -978,9 +998,10 @@ function VistoTermos({ marcado, onMudar, onAbrir }) {
     </div>
   );
 }
-// Conta NOVA que entrou sem a aceitação registada (ex.: criada pelo botão "Entrar"): pede o visto.
-// Só aparece quando o servidor diz que a aceitação é obrigatória para esta conta.
-function AceitarTermosModal({ onAceite, onSair }) {
+// Confirmação obrigatória da versão legal vigente (registo sem aceitação gravada, login ou reabertura
+// da app). Mostra os textos da versão "versao" (docs) e regista exactamente essa versão.
+// Só fecha depois de o Supabase confirmar a gravação (onAceite volta a verificar o estado).
+function AceitarTermosModal({ versao, docs, onAceite, onSair }) {
   const [marcado, setMarcado] = useState(false);
   const [doc, setDoc] = useState(null);
   const [aGravar, setAGravar] = useState(false);
@@ -988,9 +1009,10 @@ function AceitarTermosModal({ onAceite, onSair }) {
   const confirmar = async () => {
     if (!marcado || aGravar) return;
     setAGravar(true); setErro("");
-    const ok = await aceitarTermos(LEGAL_VERSAO);
+    const r = await aceitarTermos(versao);
     setAGravar(false);
-    if (ok) onAceite(); else setErro("Não foi possível registar. Verifica a internet e tenta de novo.");
+    if (r.ok || r.codigo === "versao_nao_vigente") onAceite();   // volta a verificar no servidor
+    else setErro("Não foi possível registar. Verifica a internet e tenta de novo.");
   };
   return (
     <>
@@ -1000,6 +1022,7 @@ function AceitarTermosModal({ onAceite, onSair }) {
           <p style={{ fontSize: "0.9em", color: "#A09880", lineHeight: 1.6, textAlign: "center", marginBottom: 18 }}>
             Para usares a Klaco, precisas de ler e aceitar os Termos de Uso.
           </p>
+          <div style={{ fontSize: "0.8em", color: "#8A8070", textAlign: "center", marginTop: -8, marginBottom: 16 }}>Versão {versao}</div>
           <VistoTermos marcado={marcado} onMudar={setMarcado} onAbrir={setDoc} />
           {erro && <div style={{ fontSize: "0.82em", color: "#EF4444", marginBottom: 10 }}>{erro}</div>}
           <button disabled={!marcado || aGravar} onClick={confirmar} style={{ ...S.btn, opacity: (marcado && !aGravar) ? 1 : 0.4 }}>
@@ -1011,7 +1034,7 @@ function AceitarTermosModal({ onAceite, onSair }) {
           </button>
         </div>
       </div>
-      {doc && <DocumentoLegal docId={doc} onFechar={() => setDoc(null)} onAbrir={setDoc} />}
+      {doc && <DocumentoLegal docId={doc} docs={docs} onFechar={() => setDoc(null)} onAbrir={setDoc} />}
     </>
   );
 }
@@ -1901,7 +1924,7 @@ function GrupoConfig({ titulo, children }) {
   );
 }
 
-function SettingsScreen({ state, onToggleNotif, onBack, onEditarDados, onVerDespesas, onVerEntradas, onOpenConvite, onVerEtiquetas, onOpenPlano, planoSub, onOpenAvaliacao, isAdmin, onOpenAdmin, onLogout, diasTeste }) {
+function SettingsScreen({ docsLegais = DOCS_LEGAIS, state, onToggleNotif, onBack, onEditarDados, onVerDespesas, onVerEntradas, onOpenConvite, onVerEtiquetas, onOpenPlano, planoSub, onOpenAvaliacao, isAdmin, onOpenAdmin, onLogout, diasTeste }) {
   const [mostrarSuporte, setMostrarSuporte] = useState(false);
   const [confirmarLogout, setConfirmarLogout] = useState(false);
   const [docLegal, setDocLegal] = useState(null);
@@ -1982,7 +2005,7 @@ function SettingsScreen({ state, onToggleNotif, onBack, onEditarDados, onVerDesp
       </div>
 
       {mostrarSuporte && <SuporteModal onFechar={() => setMostrarSuporte(false)} />}
-      {docLegal && <DocumentoLegal docId={docLegal} onFechar={() => setDocLegal(null)} onAbrir={setDocLegal} />}
+      {docLegal && <DocumentoLegal docId={docLegal} docs={docsLegais} onFechar={() => setDocLegal(null)} onAbrir={setDocLegal} />}
 
       {confirmarLogout && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 200, animation: "slideUp 0.25s ease" }}>
@@ -4348,7 +4371,12 @@ export default function App() {
   const [confirmacaoAdiada, setConfirmacaoAdiada] = useState(false); // "Ainda não recebi": não insistir nesta sessão
   const [definirPin, setDefinirPin] = useState(false); // mostrar ecrã de criar PIN
   const [isAdmin, setIsAdmin] = useState(false); // perfil.is_admin — mostra painel de admin
-  const [termosPorAceitar, setTermosPorAceitar] = useState(false); // conta nova sem aceitação registada
+  // Verificação legal na ENTRADA (login ou reabertura com sessão guardada):
+  // "inactivo" sem sessão | "a_verificar" | "ok" | "por_aceitar" | "erro". Só "ok" abre a app, e só
+  // para o utilizador a quem a verificação pertence (uid): uma troca de conta obriga a nova verificação.
+  const [termosVerif, setTermosVerif] = useState({ estado: "a_verificar", versao: null, uid: null });
+  const [termosTentativa, setTermosTentativa] = useState(0);         // "Tentar de novo" / depois de aceitar
+  const [docsLegaisVigentes, setDocsLegaisVigentes] = useState(DOCS_LEGAIS);
   const lembreteDiarioPara = useRef(null); // "userId|AAAA-MM-DD" já tratado nesta sessão
   const [notificacoes, setNotificacoes] = useState([]);           // lista vinda de public.notificacoes
   const [mostrarNotificacoes, setMostrarNotificacoes] = useState(false);
@@ -4844,20 +4872,38 @@ export default function App() {
     return () => { vivo = false; };
   }, [userId, aCarregar, authReady, state.setup]);
 
-  // Termos de Uso: grava uma aceitação que tenha ficado pendente (visto dado no registo) e pergunta
-  // ao servidor se ESTA conta ainda tem de aceitar. Contas criadas antes da obrigatoriedade nunca
-  // são bloqueadas. Se o servidor não responder, não se bloqueia ninguém.
+  // Documentos legais: verificados UMA vez em cada entrada (login, registo ou reabertura com sessão
+  // guardada). Uma sessão já aberta não é interrompida se entretanto for activada outra versão: o
+  // pedido aparece na próxima entrada. Grava primeiro o visto dado no registo, depois pergunta ao
+  // Supabase a versão vigente e se este utilizador a aceitou. Falha ou resposta incompleta = "erro"
+  // (nunca "aceite"): a app não abre e mostra "Tentar de novo" e "Sair da conta".
   useEffect(() => {
-    if (!userId) { setTermosPorAceitar(false); return; }
+    if (!userId) { setTermosVerif({ estado: "inactivo", versao: null, uid: null }); return; }
     if (aCarregar || !authReady) return;
     let vivo = true;
+    setTermosVerif(v => (v.estado === "ok" && v.uid === userId ? v : { estado: "a_verificar", versao: null, uid: userId }));
     (async () => {
       await registarAceitacaoPendente();
       const e = await estadoTermos();
-      if (vivo) setTermosPorAceitar(!!(e && e.obrigatorio === true && e.aceite !== true));
+      if (!vivo) return;
+      if (!e) { setTermosVerif({ estado: "erro", versao: null, uid: userId }); return; }
+      // Textos da versão vigente: os do frontend se for a mesma versão; senão, os gravados no Supabase.
+      let docs = DOCS_LEGAIS;
+      if (e.versao_atual && e.versao_atual !== LEGAL_VERSAO) {
+        docs = await conteudoTermos(e.versao_atual);
+        if (!vivo) return;
+        if (!docs) {
+          if (e.obrigatorio && !e.aceite) { setTermosVerif({ estado: "erro", versao: null, uid: userId }); return; }
+          docs = DOCS_LEGAIS;
+        }
+      }
+      setDocsLegaisVigentes(docs);
+      setTermosVerif(e.obrigatorio && !e.aceite
+        ? { estado: "por_aceitar", versao: e.versao_atual, uid: userId }
+        : { estado: "ok", versao: e.versao_atual, uid: userId });
     })();
     return () => { vivo = false; };
-  }, [userId, aCarregar, authReady]);
+  }, [userId, aCarregar, authReady, termosTentativa]);
 
   // Lembrete diário INTERNO: uma vez por dia (Africa/Luanda), só com o consentimento ligado, só com
   // o plano configurado e o período em curso confirmado. Usa o mesmo cálculo do dashboard.
@@ -5051,15 +5097,6 @@ export default function App() {
 
   // Ecrã de PIN — definir (após setup, se ainda não tem PIN) ou entrar (ao reabrir)
   // Verificação centralizada e robusta: se fez setup mas não tem PIN, define agora.
-  // Conta nova sem aceitação dos Termos registada: pede o visto antes de continuar.
-  if (termosPorAceitar && userId && !bloqueado && screen !== "auth") {
-    return (
-      <div style={S.app}>
-        <AceitarTermosModal onAceite={() => setTermosPorAceitar(false)} onSair={handleLogout} />
-      </div>
-    );
-  }
-
   if ((definirPin || (state.setup && !state.pin)) && !bloqueado) {
     return (
       <div style={S.app}>
@@ -5075,6 +5112,46 @@ export default function App() {
       </div>
     );
   }
+
+  // Documentos legais: a app só abre com a versão vigente aceite (estado "ok").
+  // Ordem: carregamento → PIN (criar ou desbloquear, acima) → esta verificação → qualquer outro ecrã
+  // (pagamento, teste terminado, painel). O resultado só vale para o utilizador a que pertence.
+  const termosOk = termosVerif.estado === "ok" && termosVerif.uid === userId;
+  if (userId && screen !== "auth" && !termosOk) {
+    if (termosVerif.estado === "por_aceitar" && termosVerif.uid === userId) {
+      return (
+        <div style={S.app}>
+          <AceitarTermosModal key={termosVerif.versao} versao={termosVerif.versao} docs={docsLegaisVigentes}
+            onAceite={() => setTermosTentativa(t => t + 1)} onSair={handleLogout} />
+        </div>
+      );
+    }
+    return (
+      <div style={S.app}>
+        <div style={{ ...S.modalOverlay, zIndex: 2500 }}>
+          <div style={{ ...S.modalCard, textAlign: "center" }}>
+            <div style={{ marginBottom: 12 }}><Sol size={40} /></div>
+            {termosVerif.estado === "erro" && termosVerif.uid === userId ? (
+              <>
+                <div style={{ ...S.logo, fontSize: "1.1em", marginBottom: 8 }}>Não foi possível continuar</div>
+                <p style={{ fontSize: "0.9em", color: "#A09880", lineHeight: 1.6, marginBottom: 18 }}>
+                  Não conseguimos confirmar os documentos legais. Verifica a internet e tenta de novo.
+                </p>
+                <button onClick={() => setTermosTentativa(t => t + 1)} style={S.btn}>Tentar de novo</button>
+                <button onClick={handleLogout}
+                  style={{ width: "100%", background: "transparent", border: "none", color: "#BDB3A0", fontSize: 14, cursor: "pointer", fontFamily: "inherit", marginTop: 12, padding: 6 }}>
+                  Sair da conta
+                </button>
+              </>
+            ) : (
+              <p style={{ fontSize: "0.9em", color: "#A09880" }}>Um momento…</p>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
 
   // If trial expired, show expired screen
   // Pagamento antecipado — durante o teste, com desconto de 50%
@@ -5192,7 +5269,7 @@ export default function App() {
         </>
       )}
       {screen === "admin"      && <AdminScreen onBack={() => setScreen("settings")} />}
-      {screen === "settings"   && <SettingsScreen state={state} onToggleNotif={handleToggleNotif} onBack={() => setScreen("dashboard")} onEditarDados={() => setScreen("editarDados")} onVerDespesas={() => setScreen("todasDespesas")} onVerEntradas={() => setScreen("todasEntradas")} onOpenConvite={() => setScreen("convite")} onVerEtiquetas={() => setScreen("etiquetas")} onOpenPlano={() => setMostrarPagarJa(true)} planoSub={contaPaga ? `Conta ativa${state.planoAtivo ? " · " + (state.planoAtivo === "anual" ? "Anual" : "Mensal") : ""}` : (trialExpired ? "O teu período gratuito terminou — subscreve" : `Período gratuito — ${trialDaysLeft} dias restantes`)} onOpenAvaliacao={() => { setAvaliacaoManual(true); setMostrarAvaliacao(true); }} isAdmin={isAdmin} onOpenAdmin={() => setScreen("admin")} onLogout={handleLogout} diasTeste={trialDaysLeft} />}
+      {screen === "settings"   && <SettingsScreen docsLegais={docsLegaisVigentes} state={state} onToggleNotif={handleToggleNotif} onBack={() => setScreen("dashboard")} onEditarDados={() => setScreen("editarDados")} onVerDespesas={() => setScreen("todasDespesas")} onVerEntradas={() => setScreen("todasEntradas")} onOpenConvite={() => setScreen("convite")} onVerEtiquetas={() => setScreen("etiquetas")} onOpenPlano={() => setMostrarPagarJa(true)} planoSub={contaPaga ? `Conta ativa${state.planoAtivo ? " · " + (state.planoAtivo === "anual" ? "Anual" : "Mensal") : ""}` : (trialExpired ? "O teu período gratuito terminou — subscreve" : `Período gratuito — ${trialDaysLeft} dias restantes`)} onOpenAvaliacao={() => { setAvaliacaoManual(true); setMostrarAvaliacao(true); }} isAdmin={isAdmin} onOpenAdmin={() => setScreen("admin")} onLogout={handleLogout} diasTeste={trialDaysLeft} />}
       {screen === "etiquetas"  && <EtiquetasScreen etiquetasCustom={state.etiquetasCustom || {}} onDelete={handleDeleteEtiqueta} onBack={() => setScreen("settings")} />}
       {screen === "editarDados" && <EditarDadosScreen state={state} onSave={handleSettingsSave} onBack={() => setScreen("settings")} />}
       {screen === "convite"     && <ConviteScreen inviteCode={state.inviteCode} inviteCount={state.inviteCount} diasAtivos={diasAtivos} onBack={() => setScreen("dashboard")} />}
