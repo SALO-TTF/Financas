@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { supabase, normalizarTelefone } from "./lib/supabase";
+import { LEGAL_VERSAO, DOCS_LEGAIS, ORDEM_DOCS_LEGAIS } from "./legal";
 
 // ── Origem do registo (canal de aquisição) ─────────────────────────────────────
 // URL → localStorage: guarda ?o=valor (ex.: ?o=fb, ?o=ig, ?o=inf-nome) só na 1.ª visita com origem.
@@ -164,6 +165,143 @@ const diasDesdeLuanda = (valor) => { const ini = dataLuanda(valor); return ini ?
 const acessoPagoValido = (estado, acessoAte) => { const ate = dataLuanda(acessoAte); return estado === "ativo" && !!ate && ate >= hojeLuanda(); };
 const acessoExpirado = (acessoAte) => { const ate = dataLuanda(acessoAte); return !!ate && ate < hojeLuanda(); };
 
+// ── MOTOR FINANCEIRO (uma única origem para o dashboard, categorias, gráficos e lembrete) ──
+// Regras:
+//  • O dinheiro disponível parte do que foi efectivamente recebido: saldo transportado dos ciclos
+//    anteriores (por categoria) + salário do ciclo em curso + entradas extra do ciclo, menos as
+//    despesas do ciclo e a poupança reservada para objectivos.
+//  • Cada lançamento conta UMA vez: pertence ao ciclo em curso se a data for igual ou posterior a
+//    dataRecebimento; os anteriores já ficaram reflectidos no saldo transportado.
+//  • "Podes gastar hoje" usa SÓ Necessidades e Qualidade de Vida. O Investimento nunca entra.
+//  • Um défice numa categoria de consumo não é escondido: desconta na disponibilidade total.
+//  • O saldo real (as três categorias) e o limite diário são indicadores diferentes.
+//  • Dias: do dia de hoje até à véspera do próximo pagamento. No último dia (ou enquanto o novo
+//    pagamento não for confirmado) divide-se por 1: nunca por zero.
+const IDS_CATS = ["necessidades", "qualidade", "investimento"];
+const CATS_CONSUMO = ["necessidades", "qualidade"];
+const numSeguro = (v) => { const n = typeof v === "number" ? v : parseFloat(v); return Number.isFinite(n) ? n : 0; };
+const arred2 = (n) => Math.round(numSeguro(n) * 100) / 100;
+const soData = (v) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v)) ? v.slice(0, 10) : null;
+// Mesmo dia do mês seguinte (ajustado ao último dia quando o mês é mais curto).
+function mesSeguinte(dataIso, diaAlvo) {
+  const [a, m, d] = dataIso.split("-").map(Number);
+  const ano = m === 12 ? a + 1 : a, mes = m === 12 ? 1 : m + 1;
+  const ultimo = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
+  const dia = Math.min(Math.max(1, Math.round(numSeguro(diaAlvo)) || d), ultimo);
+  return `${ano}-${String(mes).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
+}
+function diaAnterior(dataIso) {
+  const [a, m, d] = dataIso.split("-").map(Number);
+  return new Date(Date.UTC(a, m - 1, d - 1)).toISOString().slice(0, 10);
+}
+
+function calcularFinancas(state, hoje = hojeLuanda()) {
+  const st = state || {};
+  const pct = {};
+  IDS_CATS.forEach(c => { pct[c] = Math.max(0, numSeguro((st.pct || DEFAULT_PCT)[c])); });
+  const inicio = soData(st.dataRecebimento) || hoje;
+  const fim = soData(st.proximoPagamento) || inicio;
+  const diasAteFim = diasEntreDatas(hoje, fim);
+  // "Comecei agora": o salário indicado é uma expectativa até o 1.º pagamento ser confirmado.
+  const aguardaPrimeiroPagamento = !!st.semEntradaInicial;
+  const salario = aguardaPrimeiroPagamento ? 0 : Math.max(0, numSeguro(st.salario));
+  const cicloTerminado = diasAteFim <= 0;          // chegou o dia do pagamento: falta confirmar
+  const dias = Math.max(1, diasAteFim);            // nunca zero, nunca negativo
+
+  const noCiclo = (item) => { const d = soData(item && item.data); return !d || d >= inicio; };
+  const despesasCiclo = (Array.isArray(st.despesas) ? st.despesas : []).filter(noCiclo);
+  const entradasCiclo = (Array.isArray(st.entradasExtra) ? st.entradasExtra : []).filter(noCiclo);
+  const extras = entradasCiclo.reduce((t, e) => t + numSeguro(e && e.valor), 0);
+  const objectivos = Array.isArray(st.objectivos) ? st.objectivos : [];
+
+  const cats = {};
+  IDS_CATS.forEach(c => {
+    const transportado = numSeguro(st.saldoTransportado && st.saldoTransportado[c]);
+    const doPeriodo = (salario + extras) * pct[c] / 100;       // salário e entradas extra seguem as percentagens
+    const gasto = despesasCiclo.filter(d => d && d.categoria === c).reduce((t, d) => t + numSeguro(d.valor), 0);
+    const reservado = aguardaPrimeiroPagamento ? 0
+      : objectivos.filter(o => o && o.categoria === c).reduce((t, o) => t + numSeguro(o.poupancaMensal), 0);
+    const orcamento = transportado + doPeriodo;
+    const disponivel = orcamento - gasto - reservado;
+    cats[c] = {
+      transportado: arred2(transportado), doPeriodo: arred2(doPeriodo), orcamento: arred2(orcamento),
+      gasto: arred2(gasto), reservado: arred2(reservado), disponivel: arred2(disponivel),
+      consumo: CATS_CONSUMO.includes(c),
+      hoje: CATS_CONSUMO.includes(c) ? arred2(disponivel / dias) : null,
+    };
+  });
+  const disponivelConsumo = CATS_CONSUMO.reduce((t, c) => t + cats[c].disponivel, 0);
+  const saldoReal = IDS_CATS.reduce((t, c) => t + cats[c].disponivel, 0);
+
+  // Quantos pagamentos já deviam ter chegado e ainda não foram confirmados.
+  let porConfirmar = 0;
+  if (cicloTerminado) {
+    const diaPag = numSeguro(st.diaPagamento) || Number(fim.slice(8, 10));
+    let d = fim;
+    while (d <= hoje && porConfirmar < 24) { porConfirmar++; d = mesSeguinte(d, diaPag); }
+  }
+  return {
+    hoje, inicio, fim, dias, diasAteFim, cicloTerminado, porConfirmar, aguardaPrimeiroPagamento,
+    pct, salario: arred2(salario), extras: arred2(extras), cats, despesasCiclo, entradasCiclo,
+    totalGasto: arred2(IDS_CATS.reduce((t, c) => t + cats[c].gasto, 0)),
+    totalReservado: arred2(IDS_CATS.reduce((t, c) => t + cats[c].reservado, 0)),
+    disponivelConsumo: arred2(disponivelConsumo),
+    saldoReal: arred2(saldoReal),
+    limiteDiario: arred2(disponivelConsumo / dias),
+  };
+}
+
+// Fecha o ciclo terminado e abre o seguinte, depois de a pessoa confirmar que recebeu.
+// • O que sobrou (ou faltou) em cada categoria passa para a MESMA categoria: não é redistribuído.
+// • O novo salário entra uma única vez: se o ciclo já foi fechado (refresh, outro aparelho), não faz nada.
+// • Não apaga despesas nem entradas: ficam no histórico, fora das contas do novo ciclo pela data.
+// • Fecha UM ciclo de cada vez; se houver vários pagamentos por confirmar, a pergunta repete-se.
+function fecharCiclo(state, opcoes = {}, hoje = hojeLuanda()) {
+  const fin = calcularFinancas(state, hoje);
+  if (!state || !state.setup || !fin.cicloTerminado) return state;
+  const inicio = fin.inicio;
+  const novoInicio = fin.fim < inicio ? inicio : fin.fim;
+  const historico = Array.isArray(state.historicoPeriodos) ? state.historicoPeriodos : [];
+
+  const dentro = (item) => { const d = soData(item && item.data); return !d || (d >= inicio && d < novoInicio); };
+  const despesas = Array.isArray(state.despesas) ? state.despesas : [];
+  const entradas = Array.isArray(state.entradasExtra) ? state.entradasExtra : [];
+  const extras = entradas.filter(dentro).reduce((t, e) => t + numSeguro(e && e.valor), 0);
+  const saldoTransportado = {}, gastoPorCat = {};
+  IDS_CATS.forEach(c => {
+    const gasto = despesas.filter(d => d && d.categoria === c && dentro(d)).reduce((t, d) => t + numSeguro(d.valor), 0);
+    gastoPorCat[c] = arred2(gasto);
+    saldoTransportado[c] = arred2(fin.cats[c].transportado + (fin.salario + extras) * fin.pct[c] / 100 - gasto - fin.cats[c].reservado);
+  });
+
+  // Lançamentos antigos sem data ficam com a véspera do novo ciclo, para não voltarem a ser contados.
+  const vespera = diaAnterior(novoInicio);
+  const carimbar = (lista) => lista.map(i => (i && !soData(i.data)) ? { ...i, data: vespera } : i);
+
+  const diaEscolhido = soData(opcoes.proximoPagamento) && opcoes.proximoPagamento > novoInicio ? Number(opcoes.proximoPagamento.slice(8, 10)) : 0;
+  const diaPagamento = diaEscolhido || numSeguro(state.diaPagamento) || Number(novoInicio.slice(8, 10));
+  const proximoPagamento = diaEscolhido ? soData(opcoes.proximoPagamento) : mesSeguinte(novoInicio, diaPagamento);
+  const salarioNovo = numSeguro(opcoes.salario) > 0 ? numSeguro(opcoes.salario) : Math.max(0, numSeguro(state.salario));
+
+  return {
+    ...state,
+    despesas: carimbar(despesas),
+    entradasExtra: carimbar(entradas),
+    salario: salarioNovo,
+    dataRecebimento: novoInicio,
+    proximoPagamento,
+    diaPagamento,
+    saldoTransportado,
+    semEntradaInicial: false,
+    periodoSalarioConfirmado: novoInicio,
+    historicoPeriodos: [...historico, {
+      inicio, fim: novoInicio, salario: fin.salario, extras: arred2(extras),
+      totalGasto: arred2(IDS_CATS.reduce((t, c) => t + gastoPorCat[c], 0)), gastoPorCat,
+      saldoFinal: saldoTransportado, fechadoEm: hoje,
+    }].slice(-36),
+  };
+}
+
 // ── Notificações (tabela public.notificacoes; só leitura do utilizador + marcar como lida) ──
 const dataNotif = (n) => new Date(n.criada_em || n.criado_em || n.created_at || 0).getTime() || 0;
 
@@ -203,6 +341,59 @@ async function executarGerarLembretes() {
     if (error) { console.error("gerar-lembretes:", error.message || error); return false; }
     return true;
   } catch (e) { console.error("gerar-lembretes:", e); return false; }
+}
+
+// ── Termos de Uso: aceitação registada no servidor ────────────────────────────
+// A data NUNCA é enviada pelo navegador: a RPC public.aceitar_termos grava now() do servidor e a
+// versão aceite; as colunas termos_aceites_em/termos_versao não são escritas directamente pelo cliente.
+// (SQL entregue em supabase/sql-para-revisao/20261116090000_termos_aceitacao.sql — executar manualmente.)
+const CHAVE_TERMOS_PENDENTE = "klaco_termos_pendente";
+async function aceitarTermos(versao = LEGAL_VERSAO) {
+  try {
+    const { data, error } = await supabase.rpc("aceitar_termos", { p_versao: versao });
+    if (error) { console.error("aceitar_termos:", error.message); return false; }
+    if (data?.ok !== true) { console.error("aceitar_termos:", data?.codigo || data); return false; }
+    return true;
+  } catch (e) { console.error("aceitar_termos:", e); return false; }
+}
+// O visto dado no registo fica pendente até existir sessão (depois do código de confirmação).
+async function registarAceitacaoPendente() {
+  let versao = null;
+  try { versao = window.localStorage.getItem(CHAVE_TERMOS_PENDENTE); } catch (e) {}
+  if (!versao) return;
+  if (await aceitarTermos(versao)) { try { window.localStorage.removeItem(CHAVE_TERMOS_PENDENTE); } catch (e) {} }
+}
+// Pergunta ao servidor se ESTA conta tem de aceitar os termos (só contas criadas depois de a
+// obrigatoriedade entrar em vigor) e se já aceitou. Em caso de erro devolve null: nunca bloqueia.
+async function estadoTermos() {
+  try {
+    const { data, error } = await supabase.rpc("termos_estado");
+    if (error) { console.error("termos_estado:", error.message); return null; }
+    return data?.ok === true ? data : null;
+  } catch (e) { console.error("termos_estado:", e); return null; }
+}
+
+// ── Lembrete diário (notificação INTERNA, na lista de notificações da app) ────
+// O servidor confirma o consentimento (dados.notifLembrete), usa a data de Africa/Luanda e a
+// chave_evento "lembrete_diario:AAAA-MM-DD" para nunca duplicar. Não é uma notificação push.
+// (SQL em supabase/sql-para-revisao/20261116090100_lembrete_diario.sql — executar manualmente.)
+async function registarLembreteDiario(valor) {
+  try {
+    const { data, error } = await supabase.rpc("registar_lembrete_diario", { p_valor: valor });
+    if (error) { console.error("registar_lembrete_diario:", error.message); return null; }
+    return data || null;
+  } catch (e) { console.error("registar_lembrete_diario:", e); return null; }
+}
+
+// ── Admin: data do último pagamento aprovado (só leitura; o servidor verifica is_admin) ──
+// A RPC mantém o nome admin_inicio_plano; devolve { ok, data: "AAAA-MM-DD" (Africa/Luanda) | null }.
+// (SQL em supabase/sql-para-revisao/20261116090200_admin_inicio_plano.sql — executar manualmente.)
+async function obterUltimoPagamentoConfirmado(userId) {
+  try {
+    const { data, error } = await supabase.rpc("admin_inicio_plano", { p_user_id: userId });
+    if (error) { console.error("admin_inicio_plano:", error.message); return null; }
+    return data?.ok === true ? data : null;
+  } catch (e) { console.error("admin_inicio_plano:", e); return null; }
 }
 
 // ── Admin: listar utilizadores e ativar pagamento via Edge Function ────────────
@@ -691,11 +882,147 @@ function PinScreen({ modo, pinCorreto, biometriaAtiva, onDefinir, onEntrar, onEs
   );
 }
 
+// ── Páginas legais (Termos de Uso, Política de Reembolso, Política de Segurança) ──
+// Os textos vivem em src/legal.js (transcrição fiel do PDF oficial). **texto** = negrito.
+// Os campos entre parênteses rectos aparecem tal como estão no PDF.
+function textoLegal(str) {
+  return String(str).split(/(\*\*.*?\*\*)/g).map((parte, i) =>
+    /^\*\*.*\*\*$/.test(parte)
+      ? <b key={i} style={{ color: "#E8E0D0", fontWeight: 700 }}>{parte.slice(2, -2)}</b>
+      : parte);
+}
+function BlocoLegal({ bloco }) {
+  const pStyle = { fontSize: "0.92em", color: "#C9C0AE", lineHeight: 1.65, margin: "0 0 10px" };
+  if (bloco.p) return <p style={pStyle}>{textoLegal(bloco.p)}</p>;
+  if (bloco.l || bloco.ol) {
+    const itens = bloco.l || bloco.ol;
+    const Tag = bloco.ol ? "ol" : "ul";
+    return (
+      <Tag style={{ ...pStyle, paddingLeft: 20 }}>
+        {itens.map((it, i) => <li key={i} style={{ marginBottom: 6 }}>{textoLegal(it)}</li>)}
+      </Tag>
+    );
+  }
+  if (bloco.tabela) {
+    return (
+      <div style={{ border: "1px solid #1F1F1F", borderRadius: 12, overflow: "hidden", marginBottom: 12 }}>
+        {[bloco.tabela.cab, ...bloco.tabela.linhas].map((linha, i) => (
+          <div key={i} style={{ display: "flex", borderTop: i ? "1px solid #1F1F1F" : "none", background: i ? "transparent" : "#141414" }}>
+            {linha.map((cel, j) => (
+              <div key={j} style={{ flex: j === 1 ? 2 : 1, padding: "10px 12px", fontSize: "0.84em", lineHeight: 1.45, color: i ? "#C9C0AE" : "#8A8070", fontWeight: i ? 400 : 700 }}>{cel}</div>
+            ))}
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return null;
+}
+function DocumentoLegal({ docId, onFechar, onAbrir }) {
+  const doc = DOCS_LEGAIS[docId];
+  const topo = useRef(null);
+  useEffect(() => { try { if (topo.current) topo.current.scrollTop = 0; } catch (e) {} }, [docId]);
+  if (!doc) return null;
+  const outros = ORDEM_DOCS_LEGAIS.filter(id => id !== docId);
+  return (
+    <div ref={topo} style={{ position: "fixed", inset: 0, zIndex: 3000, background: "#080808", overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+      <div style={{ maxWidth: 480, margin: "0 auto" }}>
+        <div style={S.topBar}>
+          <button onClick={onFechar} style={S.backBtn}>← Voltar</button>
+          <div style={S.screenTitle}>Informações legais</div>
+          <div style={{ width: 60 }} />
+        </div>
+        <div style={{ padding: "0 20px 48px" }}>
+          <h1 style={{ fontSize: "1.45em", fontWeight: 800, color: "#E8E0D0", margin: "4px 0 6px", letterSpacing: "-0.02em" }}>{doc.titulo}</h1>
+          {doc.intro && <p style={{ fontSize: "0.98em", color: "#E8E0D0", lineHeight: 1.6, margin: "8px 0 10px" }}>{doc.intro}</p>}
+          {doc.versaoTexto && <div style={{ fontSize: "0.82em", color: "#8A8070", fontStyle: "italic", marginBottom: 22 }}>{doc.versaoTexto}</div>}
+          {!doc.intro && !doc.versaoTexto && <div style={{ height: 12 }} />}
+          {doc.seccoes.map((sec, i) => (
+            <div key={i} style={{ marginBottom: 20 }}>
+              <h2 style={{ fontSize: "1.02em", fontWeight: 800, color: "#E8E0D0", margin: "0 0 10px" }}>{sec.t}</h2>
+              {sec.blocos.map((b, j) => <BlocoLegal key={j} bloco={b} />)}
+            </div>
+          ))}
+          <div style={{ borderTop: "1px solid #1A1A1A", paddingTop: 18, marginTop: 8 }}>
+            <div style={{ ...S.label, marginBottom: 10 }}>VÊ TAMBÉM</div>
+            {outros.map(id => (
+              <button key={id} onClick={() => onAbrir(id)}
+                style={{ display: "block", width: "100%", textAlign: "left", background: "#0D0D0D", border: "1px solid #1A1A1A", borderRadius: 12, padding: "13px 14px", marginBottom: 8, color: "#F59E0B", fontWeight: 700, fontSize: "0.9em", cursor: "pointer", fontFamily: "inherit" }}>
+                {DOCS_LEGAIS[id].titulo}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+// Visto de aceitação dos Termos (desmarcado por defeito). "Termos de Uso" abre o documento completo.
+function VistoTermos({ marcado, onMudar, onAbrir }) {
+  const link = { color: "#F59E0B", fontWeight: 700, textDecoration: "underline", cursor: "pointer", background: "none", border: "none", padding: 0, fontFamily: "inherit", fontSize: "inherit" };
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+        <button type="button" role="checkbox" aria-checked={marcado} aria-label="Li e aceito os Termos de Uso da KLACO" onClick={() => onMudar(!marcado)}
+          style={{ width: 24, height: 24, flexShrink: 0, borderRadius: 7, border: `2px solid ${marcado ? "#F59E0B" : "#5A5245"}`, background: marcado ? "#F59E0B" : "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, marginTop: 1 }}>
+          {marcado && <Icone nome="check" size={15} style={{ color: "#1A1203" }} />}
+        </button>
+        <div style={{ fontSize: "0.88em", color: "#C9C0AE", lineHeight: 1.5 }}>
+          Li e aceito os <button type="button" style={link} onClick={() => onAbrir("termos")}>Termos de Uso</button> da KLACO.
+        </div>
+      </div>
+      <div style={{ fontSize: "0.78em", color: "#8A8070", lineHeight: 1.5, marginTop: 8, paddingLeft: 34 }}>
+        Vê também a <button type="button" style={{ ...link, fontWeight: 600 }} onClick={() => onAbrir("reembolso")}>Política de Reembolso</button> e
+        a <button type="button" style={{ ...link, fontWeight: 600 }} onClick={() => onAbrir("seguranca")}>Política de Segurança</button>.
+      </div>
+    </div>
+  );
+}
+// Conta NOVA que entrou sem a aceitação registada (ex.: criada pelo botão "Entrar"): pede o visto.
+// Só aparece quando o servidor diz que a aceitação é obrigatória para esta conta.
+function AceitarTermosModal({ onAceite, onSair }) {
+  const [marcado, setMarcado] = useState(false);
+  const [doc, setDoc] = useState(null);
+  const [aGravar, setAGravar] = useState(false);
+  const [erro, setErro] = useState("");
+  const confirmar = async () => {
+    if (!marcado || aGravar) return;
+    setAGravar(true); setErro("");
+    const ok = await aceitarTermos(LEGAL_VERSAO);
+    setAGravar(false);
+    if (ok) onAceite(); else setErro("Não foi possível registar. Verifica a internet e tenta de novo.");
+  };
+  return (
+    <>
+      <div style={{ ...S.modalOverlay, zIndex: 2500 }}>
+        <div style={S.modalCard}>
+          <div style={{ ...S.logo, fontSize: "1.15em", textAlign: "center", marginBottom: 8 }}>Antes de continuares</div>
+          <p style={{ fontSize: "0.9em", color: "#A09880", lineHeight: 1.6, textAlign: "center", marginBottom: 18 }}>
+            Para usares a Klaco, precisas de ler e aceitar os Termos de Uso.
+          </p>
+          <VistoTermos marcado={marcado} onMudar={setMarcado} onAbrir={setDoc} />
+          {erro && <div style={{ fontSize: "0.82em", color: "#EF4444", marginBottom: 10 }}>{erro}</div>}
+          <button disabled={!marcado || aGravar} onClick={confirmar} style={{ ...S.btn, opacity: (marcado && !aGravar) ? 1 : 0.4 }}>
+            {aGravar ? "Um momento…" : "Continuar"}
+          </button>
+          <button onClick={onSair}
+            style={{ width: "100%", background: "transparent", border: "none", color: "#BDB3A0", fontSize: 14, cursor: "pointer", fontFamily: "inherit", marginTop: 12, padding: 6 }}>
+            Sair da conta
+          </button>
+        </div>
+      </div>
+      {doc && <DocumentoLegal docId={doc} onFechar={() => setDoc(null)} onAbrir={setDoc} />}
+    </>
+  );
+}
+
 function AuthScreen({ onAuth }) {
   const [modo, setModo] = useState("inicio"); // inicio | criar | entrar
   const [email, setEmail] = useState("");
   const [erro, setErro] = useState("");
   const [aLigar, setALigar] = useState(false);
+  const [aceitouTermos, setAceitouTermos] = useState(false); // desmarcado por defeito
+  const [docLegal, setDocLegal] = useState(null);
 
   // Identificador: aceita EMAIL ou TELEFONE (em Angola muitos não têm email).
   const val = email.trim();
@@ -727,6 +1054,13 @@ function AuthScreen({ onAuth }) {
   const submeter = async (novaConta) => {
     setErro("");
     if (!idValido) { setErro("Escreve um email ou número de telefone válido."); return; }
+    if (novaConta && !aceitouTermos) { setErro("Para criares a conta, tens de aceitar os Termos de Uso."); return; }
+    // O visto fica pendente neste aparelho; a aceitação só é gravada no servidor (com a hora do
+    // servidor) depois de o código de confirmação criar a sessão. "Entrar" nunca regista aceitação.
+    try {
+      if (novaConta) window.localStorage.setItem(CHAVE_TERMOS_PENDENTE, LEGAL_VERSAO);
+      else window.localStorage.removeItem(CHAVE_TERMOS_PENDENTE);
+    } catch (e) {}
     setALigar(true);
     const origem = lerOrigem(); // canal guardado (ou null: então não se envia nada)
     try {
@@ -768,6 +1102,7 @@ function AuthScreen({ onAuth }) {
         // Garantir o perfil (o trigger já o cria; isto reforça nome/dados quando houver)
         await upsertPerfil(data.user, ehEmail ? { email: identGuardado } : { telefone: identGuardado });
         await guardarOrigemRegisto(data.user);
+        await registarAceitacaoPendente();
         onAuth(data.user.email || data.user.phone || identGuardado, data.user);
       } else {
         setErro("Não foi possível confirmar. Tenta de novo.");
@@ -837,15 +1172,14 @@ function AuthScreen({ onAuth }) {
             <h2 style={S.setupTitle}>Cria a tua conta</h2>
             <p style={{ ...S.setupSub, marginBottom: 20 }}>É rápido. Só precisas do teu email ou telefone — a seguir crias um código de 4 dígitos.</p>
             {campoEmail}
+            <VistoTermos marcado={aceitouTermos} onMudar={(v) => { setAceitouTermos(v); setErro(""); }} onAbrir={setDocLegal} />
             {msgErro}
-            <button onClick={() => submeter(true)} disabled={aLigar}
-              style={{ ...S.btn, opacity: (idValido && !aLigar) ? 1 : 0.5, marginBottom: 12 }}>
+            <button onClick={() => submeter(true)} disabled={aLigar || !aceitouTermos}
+              style={{ ...S.btn, opacity: (idValido && aceitouTermos && !aLigar) ? 1 : 0.5, marginBottom: 12 }}>
               {aLigar ? "Um momento…" : "Continuar"}
             </button>
             <p style={{ fontSize: "0.76em", color: "#8A8070", lineHeight: 1.5, textAlign: "center", marginBottom: 14 }}>
-              Ao criar conta confirmas que tens 18 anos ou mais e aceitas a{" "}
-              <span style={{ color: "#F59E0B" }}>Política de Privacidade</span> e os{" "}
-              <span style={{ color: "#F59E0B" }}>Termos de Uso</span>.
+              Ao criar conta confirmas que tens 18 anos ou mais.
             </p>
             <button onClick={() => { setModo("inicio"); setErro(""); }}
               style={{ width: "100%", background: "transparent", border: "none", color: "#8A8070", fontSize: "0.85em", cursor: "pointer", fontFamily: "inherit" }}>
@@ -871,6 +1205,7 @@ function AuthScreen({ onAuth }) {
           </>
         )}
       </div>
+      {docLegal && <DocumentoLegal docId={docLegal} onFechar={() => setDocLegal(null)} onAbrir={setDocLegal} />}
     </div>
   );
 }
@@ -1154,63 +1489,22 @@ function BannerPagarJa({ dias, onPagar }) {
   );
 }
 
-function DashboardScreen({ state, onAddExpense, onAddEntrada, onOpenCharts, onOpenGoals, onOpenConvite, notifNaoLidas = 0, onAbrirNotificacoes, bannerPagar }) {
-  const { salario, dataRecebimento, proximoPagamento, despesas, pct, objectivos = [], entradasExtra = [], semEntradaInicial = false } = state;
+function DashboardScreen({ state, onAddExpense, onAddEntrada, onOpenCharts, onOpenGoals, onOpenConvite, notifNaoLidas = 0, onAbrirNotificacoes, bannerPagar, onConfirmarPagamento }) {
+  const { proximoPagamento, pct } = state;
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [showComoCalcula, setShowComoCalcula] = useState(false);
 
-  // Entradas extra (13º, bónus, subsídios) deste período somam ao rendimento
-  const totalExtra = entradasExtra.reduce((s, e) => s + (e.valor || 0), 0);
-  const rendimentoPeriodo = salario + totalExtra;
-
-  // Period: dataRecebimento → proximoPagamento
-  // Caso "comecei agora": antes do 1º pagamento, conta a partir de hoje (diasPassados=0).
-  // Quando o 1º pagamento chega, passa a contar um período normal a partir dessa data.
-  const primeiroPagamentoChegou = semEntradaInicial && daysUntil(proximoPagamento) <= 0;
-  const inicioPeriodo = (semEntradaInicial && primeiroPagamentoChegou) ? proximoPagamento : dataRecebimento;
-  const fimPeriodo = (semEntradaInicial && primeiroPagamentoChegou) ? addMonths(proximoPagamento, 1) : proximoPagamento;
-  const diasRestantes = Math.max(0, daysUntil(fimPeriodo));
-  const diasPassados = (semEntradaInicial && !primeiroPagamentoChegou) ? 0 : daysSince(inicioPeriodo);
-  const diasPeriodo = diasRestantes + diasPassados;
-
-  // Despesas por categoria
-  const gastosPorCat = {};
-  CATS.forEach(c => {
-    gastosPorCat[c.id] = despesas.filter(d => d.categoria === c.id).reduce((s, d) => s + d.valor, 0);
-  });
-  const totalGasto = Object.values(gastosPorCat).reduce((a, b) => a + b, 0);
-
-  // Objectivos: poupança mensal reservada por categoria
-  const reservadoPorCat = {};
-  CATS.forEach(c => {
-    reservadoPorCat[c.id] = objectivos
-      .filter(o => o.categoria === c.id)
-      .reduce((s, o) => s + (o.poupancaMensal || 0), 0);
-  });
-  const totalReservado = Object.values(reservadoPorCat).reduce((a, b) => a + b, 0);
-
-  // Daily rate based on FULL period
-  const taxaDiaria = diasPeriodo > 0 ? rendimentoPeriodo / diasPeriodo : rendimentoPeriodo;
-  const orcamentoRestante = taxaDiaria * diasRestantes;
-
-  // Saldo real = salary - expenses - goals reserved
-  const totalComprometido = totalGasto + totalReservado;
-  const saldoAjustado = orcamentoRestante - totalComprometido;
-  const gastoDiario = diasRestantes > 0 ? saldoAjustado / diasRestantes : saldoAjustado;
-  const saldo = rendimentoPeriodo - totalComprometido;
-
-  // Context: are we on track?
-  const gastoEsperadoAteHoje = taxaDiaria * diasPassados;
-  const acimaDoEsperado = totalComprometido > gastoEsperadoAteHoje;
-  const diferencaVsEsperado = Math.abs(totalComprometido - gastoEsperadoAteHoje);
-
-  // Hero tone — vermelho SÓ quando o número é negativo (limite excedido).
-  // Reservar poupança para objectivos reduz o número, mas não deve pintá-lo de vermelho.
+  // Todos os números vêm do motor financeiro (calcularFinancas): ver as regras junto da função.
+  const fin = calcularFinancas(state);
+  const diasRestantes = fin.dias;                     // dias de hoje até à véspera do pagamento (mínimo 1)
+  const totalGasto = fin.totalGasto;
+  const gastoDiario = fin.limiteDiario;               // só Necessidades + Qualidade de Vida
+  const saldo = fin.saldoReal;                        // saldo real: as três categorias
+  // Hero — vermelho SÓ quando o número é negativo (gastou-se mais do que havia para consumo).
   const heroPositive = gastoDiario >= 0;
-
-  // Estado de espera: marcou "comecei agora" e o primeiro pagamento ainda não chegou.
-  // O salário inserido é a EXPECTATIVA, não algo já recebido — por isso não depende de ser zero.
-  const aguardaPrimeiroPagamento = semEntradaInicial && !primeiroPagamentoChegou;
+  // "Comecei agora": à espera do primeiro pagamento (até ser confirmado).
+  const aguardaPrimeiroPagamento = fin.aguardaPrimeiroPagamento;
+  const diasAtePrimeiro = Math.max(0, fin.diasAteFim);
   const dataPrimeiroFmt = (() => {
     try {
       const d = new Date(proximoPagamento + "T00:00:00");
@@ -1258,8 +1552,13 @@ function DashboardScreen({ state, onAddExpense, onAddEntrada, onOpenCharts, onOp
             </div>
             <div style={S.heroDivider} />
             <div style={{ fontSize: "0.85em", color: "#BDB3A0", lineHeight: 1.5 }}>
-              Faltam {diasRestantes} dia{diasRestantes !== 1 ? "s" : ""}. Até lá, podes ir conhecendo a Klaco.
+              {fin.cicloTerminado
+                ? "O dia do teu primeiro pagamento chegou. Confirma quando o receberes."
+                : `Faltam ${diasAtePrimeiro} dia${diasAtePrimeiro !== 1 ? "s" : ""}. Até lá, podes ir conhecendo a Klaco.`}
             </div>
+            {fin.cicloTerminado && onConfirmarPagamento && (
+              <button onClick={onConfirmarPagamento} style={{ ...S.btn, marginTop: 14, padding: "13px" }}>Já recebi</button>
+            )}
           </>
         ) : (
           <>
@@ -1274,10 +1573,20 @@ function DashboardScreen({ state, onAddExpense, onAddEntrada, onOpenCharts, onOp
               </div>
             </button>
             <div style={{ ...S.heroSub, color: heroPositive ? "#BDB3A0" : "#F0A090" }}>
-              {gastoDiario >= 0
+              {fin.cicloTerminado
+                ? "À espera de confirmares o teu pagamento"
+                : diasRestantes === 1
+                ? (gastoDiario >= 0 ? "Hoje é o último dia antes do próximo pagamento" : "Gastaste mais do que tinhas para este período")
+                : gastoDiario >= 0
                 ? `${diasRestantes} dias até ao próximo pagamento`
                 : `Precisas de compensar nos próximos ${diasRestantes} dias`}
             </div>
+            {fin.cicloTerminado && onConfirmarPagamento && (
+              <button onClick={onConfirmarPagamento}
+                style={{ marginTop: 12, background: "transparent", border: "1px solid rgba(245,158,11,0.55)", borderRadius: 12, padding: "9px 14px", color: "#F5C46B", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+                Já recebi o meu pagamento
+              </button>
+            )}
             <div style={S.heroDivider} />
             <div style={S.heroRow}>
               <div>
@@ -1297,19 +1606,16 @@ function DashboardScreen({ state, onAddExpense, onAddEntrada, onOpenCharts, onOp
       <div style={{ ...S.sectionLabel, display: "flex", justifyContent: "space-between" }}><span>DISTRIBUIÇÃO</span><span>{CATS.map(c => pct[c.id]).join(" · ")}</span></div>
       <div style={S.categoryList}>
         {CATS.map(c => {
-          const gasto = gastosPorCat[c.id];
-          const reservado = reservadoPorCat[c.id] || 0;
-          const orc = salario * pct[c.id] / 100;
+          const fc = fin.cats[c.id];
+          const gasto = fc.gasto;
+          const reservado = fc.reservado;
+          const orc = fc.orcamento;                 // transportado + parte do salário e das entradas extra
           const totalUsado = gasto + reservado;
-          const pctUsed = orc > 0 ? Math.min(100, (totalUsado / orc) * 100) : 0;
-          const over = totalUsado > orc;
-          const restante = orc - totalUsado;
-          // Taxa diária desta categoria: igual lógica do número principal — orçamento do
-          // PERÍODO INTEIRO dividido pelos dias do período inteiro (não pelos dias restantes
-          // do que sobra), para bater sempre com o "PODES GASTAR HOJE".
-          const taxaDiariaCat = diasPeriodo > 0 ? orc / diasPeriodo : orc;
-          const restanteAjustadoCat = (taxaDiariaCat * diasRestantes) - totalUsado;
-          const hojeCat = diasRestantes > 0 ? restanteAjustadoCat / diasRestantes : restanteAjustadoCat;
+          const pctUsed = orc > 0 ? Math.min(100, (totalUsado / orc) * 100) : (totalUsado > 0 ? 100 : 0);
+          const over = fc.disponivel < 0;
+          const restante = fc.disponivel;
+          // "Hoje" só existe nas categorias de consumo; o Investimento fica guardado.
+          const hojeCat = fc.consumo ? fc.hoje : null;
           return (
             <div key={c.id} style={S.categoryCard}>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -1321,13 +1627,13 @@ function DashboardScreen({ state, onAddExpense, onAddEntrada, onOpenCharts, onOp
                   {aguardaPrimeiroPagamento
                     ? <div style={{ fontSize: "0.8em", color: "#9F9582", fontWeight: 600, marginTop: 2 }}>Em breve saberás</div>
                     : over
-                    ? <div style={{ ...S.overAlert, marginTop: 2, display: "flex", alignItems: "center", gap: 5 }}><Icone nome="alert" size={14} />Excedeste em {fmtKz(totalUsado - orc)}</div>
+                    ? <div style={{ ...S.overAlert, marginTop: 2, display: "flex", alignItems: "center", gap: 5 }}><Icone nome="alert" size={14} />Excedeste em {fmtKz(Math.abs(restante))}</div>
                     : <div style={{ fontSize: "0.8em", color: "#22C55E", fontWeight: 600, marginTop: 2 }}>{fmtKz(restante)} disponível</div>}
                 </div>
                 <div style={{ textAlign: "right" }}>
                   {aguardaPrimeiroPagamento ? (
                     <div style={{ color: "#9F9582", fontWeight: 700, fontSize: "0.85em" }}>em breve</div>
-                  ) : (diasRestantes > 0 && hojeCat > 0) ? (
+                  ) : (hojeCat !== null && hojeCat > 0) ? (
                     <>
                       <div style={{ fontSize: "0.66em", color: "#9F9582", fontWeight: 700, letterSpacing: "0.06em" }}>HOJE</div>
                       <div style={{ fontSize: "0.95em", fontWeight: 800, color: "#F2EBDD" }}>{fmtKz(hojeCat)}</div>
@@ -1341,6 +1647,13 @@ function DashboardScreen({ state, onAddExpense, onAddEntrada, onOpenCharts, onOp
               {!aguardaPrimeiroPagamento && (
                 <div style={{ fontSize: "0.75em", color: "#9F9582", marginTop: 8 }}>
                   {fmtKz(gasto)}{reservado > 0 ? ` + ${fmtKz(reservado)} obj.` : ""} de {fmtKz(orc)} ({pct[c.id]}%)
+                  {fc.transportado !== 0 && (
+                    <div style={{ marginTop: 3 }}>
+                      {fc.transportado > 0
+                        ? `Inclui ${fmtKz(fc.transportado)} que sobrou do período anterior`
+                        : `Já desconta ${fmtKz(Math.abs(fc.transportado))} em falta do período anterior`}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1391,7 +1704,7 @@ function DashboardScreen({ state, onAddExpense, onAddEntrada, onOpenCharts, onOp
               <div style={{ fontSize: "1.1em", fontWeight: 800, color: "#F2EBDD", lineHeight: 1.25 }}>Como calculamos o teu número</div>
             </div>
             <p style={{ fontSize: "0.92em", color: "#C8C0B0", lineHeight: 1.65, marginBottom: 18 }}>
-              Pegamos no que tens para este período, tiramos o que já gastaste, e dividimos pelos dias que faltam até ao próximo pagamento.
+Pegamos no que tens para Necessidades e Qualidade de Vida, tiramos o que já gastaste, e dividimos pelos dias que faltam até ao próximo pagamento. O Investimento fica guardado: não entra neste número.
             </p>
             <p style={{ fontSize: "0.92em", color: "#F59E0B", fontWeight: 700, lineHeight: 1.55, marginBottom: 22 }}>
               Regista sempre gastos e entradas.<br />O número fica mais certo.
@@ -1591,6 +1904,7 @@ function GrupoConfig({ titulo, children }) {
 function SettingsScreen({ state, onToggleNotif, onBack, onEditarDados, onVerDespesas, onVerEntradas, onOpenConvite, onVerEtiquetas, onOpenPlano, planoSub, onOpenAvaliacao, isAdmin, onOpenAdmin, onLogout, diasTeste }) {
   const [mostrarSuporte, setMostrarSuporte] = useState(false);
   const [confirmarLogout, setConfirmarLogout] = useState(false);
+  const [docLegal, setDocLegal] = useState(null);
 
   const paga = acessoPagoValido(state.estadoConta, state.acessoAte);
   const nomePlano = state.planoAtivo === "anual" ? "Anual" : state.planoAtivo === "mensal" ? "Mensal" : "";
@@ -1655,6 +1969,12 @@ function SettingsScreen({ state, onToggleNotif, onBack, onEditarDados, onVerDesp
           <LinhaConfig icone="chat" titulo="Suporte e dúvidas" sub="Pagamentos, sugestões e problemas técnicos" onClick={() => setMostrarSuporte(true)} ultimo />
         </GrupoConfig>
 
+        <GrupoConfig titulo="INFORMAÇÕES LEGAIS">
+          <LinhaConfig icone="book" titulo="Termos de Uso" sub="Como podes usar a Klaco" onClick={() => setDocLegal("termos")} />
+          <LinhaConfig icone="refresh" titulo="Política de Reembolso" sub="Como desistir de um pagamento" onClick={() => setDocLegal("reembolso")} />
+          <LinhaConfig icone="shield" titulo="Política de Segurança" sub="Como protegemos a tua conta" onClick={() => setDocLegal("seguranca")} ultimo />
+        </GrupoConfig>
+
         {/* SAIR DA CONTA — visível, com confirmação antes de terminar a sessão */}
         <GrupoConfig>
           <LinhaConfig icone="logout" tipo="perigo" titulo="Sair da conta" sub="Terminar sessão neste aparelho" onClick={() => setConfirmarLogout(true)} ultimo />
@@ -1662,6 +1982,7 @@ function SettingsScreen({ state, onToggleNotif, onBack, onEditarDados, onVerDesp
       </div>
 
       {mostrarSuporte && <SuporteModal onFechar={() => setMostrarSuporte(false)} />}
+      {docLegal && <DocumentoLegal docId={docLegal} onFechar={() => setDocLegal(null)} onAbrir={setDocLegal} />}
 
       {confirmarLogout && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 200, animation: "slideUp 0.25s ease" }}>
@@ -1947,7 +2268,8 @@ function AddExpenseScreen({ onSave, onBack, despesasAnteriores, saldoRestante, e
 
 // ── GOALS SCREEN ─────────────────────────────────────────────────────────────
 function GoalsScreen({ state, onBack, onSaveGoal, onDeleteGoal, onAddToGoal, onUpdateGoal }) {
-  const { salario, objectivos = [], despesas, pct } = state;
+  const { objectivos = [] } = state;
+  const fin = calcularFinancas(state);
   const [showForm, setShowForm] = useState(false);
   const [nome, setNome] = useState("");
   const [nomeDisplay, setNomeDisplay] = useState("");
@@ -2012,9 +2334,6 @@ function GoalsScreen({ state, onBack, onSaveGoal, onDeleteGoal, onAddToGoal, onU
     setDisp(display);
   };
 
-  const totalGasto = despesas.reduce((s,d) => s + d.valor, 0);
-  const saldo = salario - totalGasto;
-
   return (
     <div style={S.screen}>
       <div style={S.topBar}>
@@ -2029,8 +2348,8 @@ function GoalsScreen({ state, onBack, onSaveGoal, onDeleteGoal, onAddToGoal, onU
           <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 20 }}>
             {objectivos.map(obj => {
               const cat = CATS.find(c => c.id === obj.categoria);
-              const orcCat = salario * pct[obj.categoria] / 100;
-              const gastoCat = despesas.filter(d => d.categoria === obj.categoria).reduce((s,d) => s+d.valor, 0);
+              const orcCat = fin.cats[obj.categoria] ? fin.cats[obj.categoria].orcamento : 0;
+              const gastoCat = fin.cats[obj.categoria] ? fin.cats[obj.categoria].gasto : 0;
               const dispCat = orcCat - gastoCat - obj.poupancaMensal;
               const pctConcluido = Math.min(100, (obj.acumulado / obj.valorAlvo) * 100);
               const mesesRestantes = obj.poupancaMensal > 0
@@ -2262,18 +2581,20 @@ function GoalsScreen({ state, onBack, onSaveGoal, onDeleteGoal, onAddToGoal, onU
 
 // ── CHARTS SCREEN ────────────────────────────────────────────────────────────
 function ChartsScreen({ state, onBack }) {
-  const { salario, despesas, pct, historicoPeriodos = [], objectivos = [] } = state;
-  const totalGasto = despesas.reduce((s, d) => s + d.valor, 0);
-  // Dinheiro separado para objetivos (conta como parte do Investimento)
-  const totalObjetivos = objectivos.reduce((s, o) => s + (o.acumulado || 0), 0);
-  const saldo = salario - totalGasto - totalObjetivos;
+  const { historicoPeriodos = [] } = state;
+  const fin = calcularFinancas(state);
+  const despesas = fin.despesasCiclo;   // só o ciclo em curso; os anteriores estão no histórico
+  const orcamentoTotal = IDS_CATS.reduce((t, c) => t + fin.cats[c].orcamento, 0);
+  const totalGasto = despesas.reduce((s, d) => s + numSeguro(d.valor), 0);
+  const saldo = fin.saldoReal;          // o mesmo saldo real do dashboard
 
-  // Per category totals — cada objetivo soma à SUA categoria (não sempre ao investimento)
+  // Por categoria, só o período em curso: gastos do ciclo + poupança dos objectivos reservada neste
+  // período (a mesma conta do dashboard). O acumulado total dos objectivos é de vários períodos e
+  // não se compara com o orçamento de um só.
   const catTotals = CATS.map(c => ({
     ...c,
-    gasto: despesas.filter(d => d.categoria === c.id).reduce((s, d) => s + d.valor, 0)
-           + objectivos.filter(o => (o.categoria || "investimento") === c.id).reduce((s, o) => s + (o.acumulado || 0), 0),
-    orcamento: salario * pct[c.id] / 100,
+    gasto: fin.cats[c.id].gasto + fin.cats[c.id].reservado,
+    orcamento: fin.cats[c.id].orcamento,
   }));
 
   // ── PADRÕES DE COMPORTAMENTO (cálculo simples sobre os dados existentes) ──
@@ -2422,7 +2743,7 @@ function ChartsScreen({ state, onBack }) {
                     />
                   ))}
                   <text x={cx} y={cy - 6} textAnchor="middle" fill="#DDD" fontSize="11" fontWeight="700" fontFamily="Plus Jakarta Sans, sans-serif">GASTO</text>
-                  <text x={cx} y={cy + 10} textAnchor="middle" fill="#F59E0B" fontSize="11" fontWeight="800" fontFamily="Plus Jakarta Sans, sans-serif">{totalGasto > 0 ? ((totalGasto/salario)*100).toFixed(0) : 0}%</text>
+                  <text x={cx} y={cy + 10} textAnchor="middle" fill="#F59E0B" fontSize="11" fontWeight="800" fontFamily="Plus Jakarta Sans, sans-serif">{(totalGasto > 0 && orcamentoTotal > 0) ? ((totalGasto/orcamentoTotal)*100).toFixed(0) : 0}%</text>
                 </svg>
                 {/* Legend */}
                 <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -3407,6 +3728,57 @@ function ParabensPagamentoModal({ plano, acessoAte, onFechar }) {
 
 
 // ── CONSENTIMENTO DE NOTIFICAÇÕES (aparece uma vez, após o 1º número) ─────────
+// Confirmação do pagamento quando o ciclo chega ao fim. Só depois de confirmar é que o novo salário
+// entra (uma única vez) e o que sobrou passa para o período seguinte, na mesma categoria.
+function ConfirmarPagamentoModal({ fin, salarioAnterior, diaPagamento, onConfirmar, onAdiar }) {
+  const sugestao = mesSeguinte(fin.fim, diaPagamento || Number(fin.fim.slice(8, 10)));
+  const [valor, setValor] = useState(salarioAnterior ? String(salarioAnterior) : "");
+  const [display, setDisplay] = useState(salarioAnterior ? String(salarioAnterior).replace(/\B(?=(\d{3})+(?!\d))/g, ".") : "");
+  const [proximo, setProximo] = useState(sugestao);
+  const handleInput = (raw) => {
+    const { valor: nv, display: disp } = parseValorInput(raw);
+    setValor(nv ? String(nv) : "");
+    setDisplay(disp);
+  };
+  const dataFmt = (iso) => { try { return new Date(iso + "T00:00:00").toLocaleDateString("pt-PT", { day: "numeric", month: "long" }); } catch (e) { return iso; } };
+  const valido = !!valor && parseInt(valor) > 0 && !!soData(proximo) && proximo > fin.fim;
+  return (
+    <div style={S.modalOverlay}>
+      <div style={S.modalCard}>
+        <div style={{ textAlign: "center", marginBottom: 12 }}><Sol size={44} /></div>
+        <div style={{ ...S.logo, fontSize: "1.15em", textAlign: "center", marginBottom: 8 }}>
+          {fin.aguardaPrimeiroPagamento ? "O teu primeiro pagamento já chegou?" : "Já recebeste o teu pagamento?"}
+        </div>
+        <p style={{ fontSize: "0.9em", color: "#A09880", lineHeight: 1.6, textAlign: "center", marginBottom: 18 }}>
+          {fin.porConfirmar > 1
+            ? `Tens ${fin.porConfirmar} pagamentos por confirmar. Este é o de ${dataFmt(fin.fim)}.`
+            : `Estava previsto para ${dataFmt(fin.fim)}.`}{" "}
+          Confirma quanto recebeste. O que sobrou do período anterior continua contigo, na mesma categoria.
+        </p>
+        <div style={S.label}>QUANTO RECEBESTE</div>
+        <div style={S.inputGroup}>
+          <span style={S.currency}>Kz</span>
+          <input type="text" inputMode="numeric" value={display}
+            onChange={e => handleInput(e.target.value)} placeholder="0" style={S.bigInput} />
+        </div>
+        <div style={{ ...S.label, marginTop: 16 }}>DATA DO PRÓXIMO PAGAMENTO</div>
+        <input type="date" value={proximo} min={fin.fim} onChange={e => setProximo(e.target.value)} style={S.dateInput} />
+        {!!soData(proximo) && proximo <= fin.fim && (
+          <div style={{ fontSize: "0.82em", color: "#EF4444", marginTop: 8 }}>A data tem de ser depois de {dataFmt(fin.fim)}</div>
+        )}
+        <button disabled={!valido} onClick={() => onConfirmar(parseInt(valor), proximo)}
+          style={{ ...S.btn, marginTop: 20, opacity: valido ? 1 : 0.4 }}>
+          Confirmar que recebi
+        </button>
+        <button onClick={onAdiar}
+          style={{ width: "100%", background: "transparent", border: "none", color: "#BDB3A0", fontSize: 14, cursor: "pointer", fontFamily: "inherit", marginTop: 12, padding: 6 }}>
+          Ainda não recebi
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ConfirmarSalarioModal({ salarioAnterior, onConfirmar }) {
   const [valor, setValor] = useState(String(salarioAnterior || ""));
   const [display, setDisplay] = useState(salarioAnterior ? String(salarioAnterior).replace(/\B(?=(\d{3})+(?!\d))/g, ".") : "");
@@ -3721,6 +4093,16 @@ function AdminScreen({ onBack }) {
   const [msg, setMsg] = useState(null); // {tipo:'ok'|'erro', texto}
   const [pendentes, setPendentes] = useState([]);
   const [aProcessarPag, setAProcessarPag] = useState(null); // id em processamento
+  // Último pagamento aprovado do utilizador aberto ("a_carregar" | null | resposta da RPC)
+  const [pagConfirmado, setPagConfirmado] = useState(null);
+  const idSelecionado = selecionado ? selecionado.id : null;
+  useEffect(() => {
+    if (!idSelecionado) { setPagConfirmado(null); return; }
+    let vivo = true;
+    setPagConfirmado("a_carregar");
+    obterUltimoPagamentoConfirmado(idSelecionado).then(r => { if (vivo) setPagConfirmado(r); });
+    return () => { vivo = false; };
+  }, [idSelecionado]);
 
   const carregar = async () => {
     setACarregar(true);
@@ -3815,6 +4197,10 @@ function AdminScreen({ onBack }) {
   // ── Detalhe de um utilizador ──
   if (selecionado) {
     const est = estadoReal(selecionado);
+    // Data (Africa/Luanda) do último pagamento APROVADO, devolvida pelo servidor já em AAAA-MM-DD.
+    const fmtDia = (iso) => { const [a, m, d] = String(iso || "").slice(0, 10).split("-"); return (a && m && d) ? `${d}/${m}/${a}` : null; };
+    const pagamentoConfirmadoTxt = pagConfirmado === "a_carregar" ? "…"
+      : (pagConfirmado && fmtDia(pagConfirmado.data)) || "Não disponível";
     return (
       <div style={S.screen}>
         <div style={S.topBar}>
@@ -3831,6 +4217,7 @@ function AdminScreen({ onBack }) {
               {est !== "admin" && (
                 <>
                   <div>Plano: {selecionado.plano || "—"}</div>
+                  <div>Pagamento confirmado em: {pagamentoConfirmadoTxt}</div>
                   <div>Início do trial: {selecionado.trial_inicio || "—"}</div>
                   <div>Acesso até: {selecionado.acesso_ate || "—"}</div>
                 </>
@@ -3958,8 +4345,11 @@ export default function App() {
   const [aCarregar, setACarregar] = useState(true); // a verificar sessão ao arrancar
   const [authReady, setAuthReady] = useState(false); // decisão de navegação inicial concluída
   const [bloqueado, setBloqueado] = useState(false); // ecrã de PIN a bloquear o acesso
+  const [confirmacaoAdiada, setConfirmacaoAdiada] = useState(false); // "Ainda não recebi": não insistir nesta sessão
   const [definirPin, setDefinirPin] = useState(false); // mostrar ecrã de criar PIN
   const [isAdmin, setIsAdmin] = useState(false); // perfil.is_admin — mostra painel de admin
+  const [termosPorAceitar, setTermosPorAceitar] = useState(false); // conta nova sem aceitação registada
+  const lembreteDiarioPara = useRef(null); // "userId|AAAA-MM-DD" já tratado nesta sessão
   const [notificacoes, setNotificacoes] = useState([]);           // lista vinda de public.notificacoes
   const [mostrarNotificacoes, setMostrarNotificacoes] = useState(false);
   const lembretesExecutadosPara = useRef(null); // userId para o qual gerar-lembretes já correu nesta sessão
@@ -4105,6 +4495,7 @@ export default function App() {
   // [DEV] Com o Supabase, este controlo deve viver no servidor para ser à prova de tudo.
   useEffect(() => {
     if (!state.setup) return;
+    if (state.semEntradaInicial) return; // ainda não recebeu o primeiro pagamento: nada para guardar
     const periodoAtual = state.dataRecebimento || "";
     if (!periodoAtual) return;
     const objs = state.objectivos || [];
@@ -4122,7 +4513,7 @@ export default function App() {
         return g;
       }),
     }));
-  }, [state.setup, state.dataRecebimento, state.objectivos]);
+  }, [state.setup, state.semEntradaInicial, state.dataRecebimento, state.objectivos]);
 
   // Cálculo do trial — FONTE OFICIAL: perfis.trial_inicio (servidor, protegido).
   // O trial_inicio vem do Supabase e não pode ser manipulado no navegador.
@@ -4138,6 +4529,9 @@ export default function App() {
   // Bloqueio: trial gratuito esgotado OU subscrição paga expirada (ambos exigem pagar).
   // Isto é apresentação (UI), não autorização: a autoridade é a base de dados
   // (is_admin, estado, plano, acesso_ate, trial_inicio), que o cliente não consegue alterar.
+  // Motor financeiro (a mesma conta do dashboard) e pagamento por confirmar.
+  const finApp = calcularFinancas(state);
+  const cicloPorConfirmar = !!state.setup && finApp.cicloTerminado;
   const trialExpired = state.setup && !isAdmin && !contaPaga &&
     (subscricaoExpirada || trialDaysUsed >= TRIAL_DAYS);
 
@@ -4401,6 +4795,12 @@ export default function App() {
     }));
   };
 
+  // Fecho de ciclo: só acontece depois de a pessoa confirmar que recebeu (ver fecharCiclo).
+  const handleConfirmarCiclo = (novoValor, proximoPagamento) => {
+    setState(prev => fecharCiclo(prev, { salario: novoValor, proximoPagamento }));
+    setConfirmacaoAdiada(false);
+  };
+
   const handleConfirmarSalario = (novoValor) => {
     setState(prev => ({
       ...prev,
@@ -4443,6 +4843,42 @@ export default function App() {
     })();
     return () => { vivo = false; };
   }, [userId, aCarregar, authReady, state.setup]);
+
+  // Termos de Uso: grava uma aceitação que tenha ficado pendente (visto dado no registo) e pergunta
+  // ao servidor se ESTA conta ainda tem de aceitar. Contas criadas antes da obrigatoriedade nunca
+  // são bloqueadas. Se o servidor não responder, não se bloqueia ninguém.
+  useEffect(() => {
+    if (!userId) { setTermosPorAceitar(false); return; }
+    if (aCarregar || !authReady) return;
+    let vivo = true;
+    (async () => {
+      await registarAceitacaoPendente();
+      const e = await estadoTermos();
+      if (vivo) setTermosPorAceitar(!!(e && e.obrigatorio === true && e.aceite !== true));
+    })();
+    return () => { vivo = false; };
+  }, [userId, aCarregar, authReady]);
+
+  // Lembrete diário INTERNO: uma vez por dia (Africa/Luanda), só com o consentimento ligado, só com
+  // o plano configurado e o período em curso confirmado. Usa o mesmo cálculo do dashboard.
+  // O servidor volta a verificar o consentimento e impede duplicados (chave_evento por dia).
+  useEffect(() => {
+    if (!userId || aCarregar || !authReady || !state.setup || !state.notifLembrete) return;
+    if (cicloPorConfirmar || finApp.aguardaPrimeiroPagamento) return;
+    const chave = `${userId}|${finApp.hoje}`;
+    if (lembreteDiarioPara.current === chave) return;
+    lembreteDiarioPara.current = chave;
+    const valor = Math.max(0, Math.floor(finApp.limiteDiario));
+    // Aguarda a gravação do estado (debounce de 1,2 s) para o servidor ler o consentimento actual.
+    const t = setTimeout(async () => {
+      const r = await registarLembreteDiario(valor);
+      if (r && r.criada) {
+        const lista = await carregarNotificacoes(userId);
+        if (lista) setNotificacoes(lista);
+      }
+    }, 2500);
+    return () => clearTimeout(t);
+  }, [userId, aCarregar, authReady, state.setup, state.notifLembrete, cicloPorConfirmar, finApp.aguardaPrimeiroPagamento, finApp.hoje, finApp.limiteDiario]);
 
   // Ao voltar à app, atualiza a lista (ex.: pagamento aprovado entretanto).
   useEffect(() => {
@@ -4550,6 +4986,7 @@ export default function App() {
     // Não empilhar com outros modais que tenham prioridade real neste momento.
     // (As notificações NÃO bloqueiam — o instalar aparece primeiro, e as notificações vêm depois.)
     const outroAvisoAtivo =
+      (cicloPorConfirmar && !confirmacaoAdiada) ||
       (state.rendimentoVariavel && state.periodoSalarioConfirmado !== state.dataRecebimento) ||
       conviteMomento || conquistaModal;
     if (outroAvisoAtivo) return;
@@ -4563,7 +5000,7 @@ export default function App() {
       (pedidos === 2 && ab >= 6);
     if (deveMostrar) setMostrarInstalar(true);
   }, [state.setup, state.appInstalada, state.aberturas, state.instalarPedidos,
-      conviteMomento, conquistaModal,
+      conviteMomento, conquistaModal, cicloPorConfirmar, confirmacaoAdiada,
       state.rendimentoVariavel, state.periodoSalarioConfirmado, state.dataRecebimento]);
 
   // Pedido de avaliação — PRIORIDADE MAIS BAIXA de todas.
@@ -4575,6 +5012,7 @@ export default function App() {
     const algoAtivo =
       mostrarInstalar || mostrarPagarJa || conviteMomento || conquistaModal ||
       !state.notifPerguntado ||
+      (cicloPorConfirmar && !confirmacaoAdiada) ||
       (state.rendimentoVariavel && state.periodoSalarioConfirmado !== state.dataRecebimento) ||
       (!state.appInstalada && (state.instalarPedidos || 0) === 0);
     if (algoAtivo) return;
@@ -4596,7 +5034,7 @@ export default function App() {
     }
   }, [state.setup, trialDaysUsed, trialExpired, state.avaliacaoTrialFeita,
       state.notifPerguntado, state.appInstalada, state.instalarPedidos,
-      mostrarInstalar, mostrarPagarJa, conviteMomento, conquistaModal,
+      mostrarInstalar, mostrarPagarJa, conviteMomento, conquistaModal, cicloPorConfirmar, confirmacaoAdiada,
       state.rendimentoVariavel, state.periodoSalarioConfirmado, state.dataRecebimento, state.ultimoPedidoAvaliacao]);
 
   // Ecrã de carregamento enquanto verifica a sessão no Supabase
@@ -4613,6 +5051,15 @@ export default function App() {
 
   // Ecrã de PIN — definir (após setup, se ainda não tem PIN) ou entrar (ao reabrir)
   // Verificação centralizada e robusta: se fez setup mas não tem PIN, define agora.
+  // Conta nova sem aceitação dos Termos registada: pede o visto antes de continuar.
+  if (termosPorAceitar && userId && !bloqueado && screen !== "auth") {
+    return (
+      <div style={S.app}>
+        <AceitarTermosModal onAceite={() => setTermosPorAceitar(false)} onSair={handleLogout} />
+      </div>
+    );
+  }
+
   if ((definirPin || (state.setup && !state.pin)) && !bloqueado) {
     return (
       <div style={S.app}>
@@ -4710,9 +5157,15 @@ export default function App() {
             bannerPagar={state.setup && !isAdmin && !trialExpired && !contaPaga
               ? <BannerPagarJa dias={trialDaysLeft} onPagar={() => setMostrarPagarJa(true)} />
               : null}
+            onConfirmarPagamento={() => setConfirmacaoAdiada(false)}
           />
+          {/* Chegou o dia do pagamento: confirmar o recebimento para abrir o novo período (uma única vez) */}
+          {cicloPorConfirmar && !confirmacaoAdiada && (
+            <ConfirmarPagamentoModal key={finApp.fim} fin={finApp} salarioAnterior={state.salario} diaPagamento={state.diaPagamento}
+              onConfirmar={handleConfirmarCiclo} onAdiar={() => setConfirmacaoAdiada(true)} />
+          )}
           {/* Confirmação de rendimento — só para quem tem rendimento variável, quando muda o período */}
-          {state.setup && state.rendimentoVariavel && state.periodoSalarioConfirmado !== state.dataRecebimento && (
+          {state.setup && !cicloPorConfirmar && state.rendimentoVariavel && state.periodoSalarioConfirmado !== state.dataRecebimento && (
             <ConfirmarSalarioModal salarioAnterior={state.salario} onConfirmar={handleConfirmarSalario} />
           )}
           {/* Cartão de consentimento de notificações — só DEPOIS de tratar o convite de instalar */}
@@ -4746,7 +5199,7 @@ export default function App() {
       {screen === "add"        && <AddExpenseScreen onSave={handleAddExpense} onBack={() => setScreen("dashboard")}
                                     despesasAnteriores={state.despesas}
                                     etiquetasCustom={state.etiquetasCustom || {}}
-                                    saldoRestante={state.salario - state.despesas.reduce((s,d) => s+d.valor, 0)} />}
+                                    saldoRestante={finApp.saldoReal} />}
       {screen === "addEntrada" && <AddEntradaScreen onSave={handleAddEntrada} onBack={() => setScreen("dashboard")} />}
       {screen === "todasDespesas" && <AllDespesasScreen despesas={state.despesas} onEdit={handleEditExpense} onDelete={handleDeleteExpense} onBack={() => setScreen("settings")} />}
       {screen === "todasEntradas" && <AllEntradasScreen entradas={state.entradasExtra || []} onEdit={handleEditEntrada} onDelete={handleDeleteEntrada} onBack={() => setScreen("settings")} onAdd={() => setScreen("addEntrada")} />}
