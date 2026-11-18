@@ -938,21 +938,45 @@ function BlocoLegal({ bloco }) {
   }
   return null;
 }
-function DocumentoLegal({ docId, onFechar, onAbrir, docs = DOCS_LEGAIS }) {
+// Cabeçalho (Voltar) e rodapé ficam fora da zona que faz scroll, por isso estão sempre visíveis,
+// e respeitam as áreas seguras do ecrã (notch / barra de estado / barra inferior).
+// leituraObrigatoria + onConcluir (só para os Termos de Uso): o botão "Concluir leitura" só aparece
+// quando o scroll chega realmente ao fim do documento.
+function DocumentoLegal({ docId, onFechar, onAbrir, docs = DOCS_LEGAIS, leituraObrigatoria = false, onConcluir }) {
   const doc = docs[docId];
   const topo = useRef(null);
-  useEffect(() => { try { if (topo.current) topo.current.scrollTop = 0; } catch (e) {} }, [docId]);
+  const [chegouAoFim, setChegouAoFim] = useState(false);
+  const exigeLeitura = leituraObrigatoria && docId === "termos" && typeof onConcluir === "function";
+  const verFim = () => {
+    const el = topo.current;
+    if (el && el.scrollTop + el.clientHeight >= el.scrollHeight - 16) setChegouAoFim(true);
+  };
+  useEffect(() => {
+    const verificar = () => {
+      const el = topo.current;
+      if (el && el.scrollTop + el.clientHeight >= el.scrollHeight - 16) setChegouAoFim(true);
+    };
+    setChegouAoFim(false);
+    try { if (topo.current) topo.current.scrollTop = 0; } catch (e) {}
+    const t = setTimeout(verificar, 50);   // documento mais curto do que o ecrã: já está no fim
+    window.addEventListener("resize", verificar);
+    return () => { clearTimeout(t); window.removeEventListener("resize", verificar); };
+  }, [docId]);
   if (!doc) return null;
   const outros = ORDEM_DOCS_LEGAIS.filter(id => id !== docId);
   return (
-    <div ref={topo} style={{ position: "fixed", inset: 0, zIndex: 3000, background: "#080808", overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
-      <div style={{ maxWidth: 480, margin: "0 auto" }}>
-        <div style={S.topBar}>
-          <button onClick={onFechar} style={S.backBtn}>← Voltar</button>
-          <div style={S.screenTitle}>Informações legais</div>
-          <div style={{ width: 60 }} />
+    <div style={{ position: "fixed", inset: 0, zIndex: 3000, background: "#080808", display: "flex", flexDirection: "column" }}>
+      <div style={{ flexShrink: 0, background: "#080808", borderBottom: "1px solid #141414", paddingTop: "env(safe-area-inset-top, 0px)", paddingLeft: "env(safe-area-inset-left, 0px)", paddingRight: "env(safe-area-inset-right, 0px)" }}>
+        <div style={{ ...S.topBar, maxWidth: 480, margin: "0 auto", padding: "12px 16px 12px", gap: 8 }}>
+          <button onClick={onFechar} style={{ ...S.backBtn, whiteSpace: "nowrap", flexShrink: 0 }}>← Voltar</button>
+          <div style={{ ...S.screenTitle, whiteSpace: "nowrap" }}>Informações legais</div>
+          <div style={{ width: 60, flexShrink: 1 }} />
         </div>
-        <div style={{ padding: "0 20px 48px" }}>
+      </div>
+      <div ref={topo} onScroll={exigeLeitura ? verFim : undefined}
+        style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", paddingLeft: "env(safe-area-inset-left, 0px)", paddingRight: "env(safe-area-inset-right, 0px)", paddingBottom: exigeLeitura ? 0 : "env(safe-area-inset-bottom, 0px)" }}>
+      <div style={{ maxWidth: 480, margin: "0 auto" }}>
+        <div style={{ padding: "16px 20px 48px" }}>
           <h1 style={{ fontSize: "1.45em", fontWeight: 800, color: "#E8E0D0", margin: "4px 0 6px", letterSpacing: "-0.02em" }}>{doc.titulo}</h1>
           {doc.intro && <p style={{ fontSize: "0.98em", color: "#E8E0D0", lineHeight: 1.6, margin: "8px 0 10px" }}>{doc.intro}</p>}
           {doc.versaoTexto && <div style={{ fontSize: "0.82em", color: "#8A8070", fontStyle: "italic", marginBottom: 22 }}>{doc.versaoTexto}</div>}
@@ -974,21 +998,39 @@ function DocumentoLegal({ docId, onFechar, onAbrir, docs = DOCS_LEGAIS }) {
           </div>
         </div>
       </div>
+      </div>
+      {exigeLeitura && (
+        <div style={{ flexShrink: 0, background: "#080808", borderTop: "1px solid #141414", padding: "12px 16px", paddingBottom: "calc(12px + env(safe-area-inset-bottom, 0px))" }}>
+          <div style={{ maxWidth: 448, margin: "0 auto" }}>
+            {chegouAoFim ? (
+              <button onClick={onConcluir} style={S.btn}>Concluir leitura</button>
+            ) : (
+              <div style={{ fontSize: "0.85em", color: "#8A8070", textAlign: "center", padding: "10px 0" }}>Desliza até ao fim para concluir a leitura</div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 // Visto de aceitação dos Termos (desmarcado por defeito). "Termos de Uso" abre o documento completo.
-function VistoTermos({ marcado, onMudar, onAbrir }) {
+// bloqueado=true: os Termos ainda não foram lidos até ao fim; o visto não pode ser marcado.
+function VistoTermos({ marcado, onMudar, onAbrir, bloqueado = false }) {
   const link = { color: "#F59E0B", fontWeight: 700, textDecoration: "underline", cursor: "pointer", background: "none", border: "none", padding: 0, fontFamily: "inherit", fontSize: "inherit" };
   return (
     <div style={{ marginBottom: 14 }}>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-        <button type="button" role="checkbox" aria-checked={marcado} aria-label="Li e aceito os Termos de Uso da KLACO" onClick={() => onMudar(!marcado)}
-          style={{ width: 24, height: 24, flexShrink: 0, borderRadius: 7, border: `2px solid ${marcado ? "#F59E0B" : "#5A5245"}`, background: marcado ? "#F59E0B" : "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, marginTop: 1 }}>
+        <button type="button" role="checkbox" aria-checked={marcado} aria-disabled={bloqueado} disabled={bloqueado} aria-label="Li e aceito os Termos de Uso da KLACO" onClick={() => { if (!bloqueado) onMudar(!marcado); }}
+          style={{ width: 24, height: 24, flexShrink: 0, borderRadius: 7, border: `2px solid ${marcado ? "#F59E0B" : "#5A5245"}`, background: marcado ? "#F59E0B" : "transparent", cursor: bloqueado ? "not-allowed" : "pointer", opacity: bloqueado ? 0.4 : 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 0, marginTop: 1 }}>
           {marcado && <Icone nome="check" size={15} style={{ color: "#1A1203" }} />}
         </button>
         <div style={{ fontSize: "0.88em", color: "#C9C0AE", lineHeight: 1.5 }}>
           Li e aceito os <button type="button" style={link} onClick={() => onAbrir("termos")}>Termos de Uso</button> da KLACO.
+          {bloqueado && (
+            <div style={{ fontSize: "0.88em", color: "#F59E0B", marginTop: 4 }}>
+              Abre os <button type="button" style={{ ...link, fontWeight: 600 }} onClick={() => onAbrir("termos")}>Termos de Uso</button> e lê até ao fim para poderes aceitar.
+            </div>
+          )}
         </div>
       </div>
       <div style={{ fontSize: "0.78em", color: "#8A8070", lineHeight: 1.5, marginTop: 8, paddingLeft: 34 }}>
@@ -1003,6 +1045,7 @@ function VistoTermos({ marcado, onMudar, onAbrir }) {
 // Só fecha depois de o Supabase confirmar a gravação (onAceite volta a verificar o estado).
 function AceitarTermosModal({ versao, docs, onAceite, onSair }) {
   const [marcado, setMarcado] = useState(false);
+  const [termosLidos, setTermosLidos] = useState(false); // Termos percorridos até ao fim
   const [doc, setDoc] = useState(null);
   const [aGravar, setAGravar] = useState(false);
   const [erro, setErro] = useState("");
@@ -1023,7 +1066,7 @@ function AceitarTermosModal({ versao, docs, onAceite, onSair }) {
             Para usares a Klaco, precisas de ler e aceitar os Termos de Uso.
           </p>
           <div style={{ fontSize: "0.8em", color: "#8A8070", textAlign: "center", marginTop: -8, marginBottom: 16 }}>Versão {versao}</div>
-          <VistoTermos marcado={marcado} onMudar={setMarcado} onAbrir={setDoc} />
+          <VistoTermos marcado={marcado} onMudar={setMarcado} onAbrir={setDoc} bloqueado={!termosLidos} />
           {erro && <div style={{ fontSize: "0.82em", color: "#EF4444", marginBottom: 10 }}>{erro}</div>}
           <button disabled={!marcado || aGravar} onClick={confirmar} style={{ ...S.btn, opacity: (marcado && !aGravar) ? 1 : 0.4 }}>
             {aGravar ? "Um momento…" : "Continuar"}
@@ -1034,7 +1077,8 @@ function AceitarTermosModal({ versao, docs, onAceite, onSair }) {
           </button>
         </div>
       </div>
-      {doc && <DocumentoLegal docId={doc} docs={docs} onFechar={() => setDoc(null)} onAbrir={setDoc} />}
+      {doc && <DocumentoLegal docId={doc} docs={docs} onFechar={() => setDoc(null)} onAbrir={setDoc}
+        leituraObrigatoria={!termosLidos} onConcluir={() => { setTermosLidos(true); setDoc(null); }} />}
     </>
   );
 }
@@ -1045,6 +1089,7 @@ function AuthScreen({ onAuth }) {
   const [erro, setErro] = useState("");
   const [aLigar, setALigar] = useState(false);
   const [aceitouTermos, setAceitouTermos] = useState(false); // desmarcado por defeito
+  const [termosLidos, setTermosLidos] = useState(false);     // Termos percorridos até ao fim
   const [docLegal, setDocLegal] = useState(null);
 
   // Identificador: aceita EMAIL ou TELEFONE (em Angola muitos não têm email).
@@ -1195,7 +1240,7 @@ function AuthScreen({ onAuth }) {
             <h2 style={S.setupTitle}>Cria a tua conta</h2>
             <p style={{ ...S.setupSub, marginBottom: 20 }}>É rápido. Só precisas do teu email ou telefone — a seguir crias um código de 4 dígitos.</p>
             {campoEmail}
-            <VistoTermos marcado={aceitouTermos} onMudar={(v) => { setAceitouTermos(v); setErro(""); }} onAbrir={setDocLegal} />
+            <VistoTermos marcado={aceitouTermos} onMudar={(v) => { setAceitouTermos(v); setErro(""); }} onAbrir={setDocLegal} bloqueado={!termosLidos} />
             {msgErro}
             <button onClick={() => submeter(true)} disabled={aLigar || !aceitouTermos}
               style={{ ...S.btn, opacity: (idValido && aceitouTermos && !aLigar) ? 1 : 0.5, marginBottom: 12 }}>
@@ -1228,7 +1273,8 @@ function AuthScreen({ onAuth }) {
           </>
         )}
       </div>
-      {docLegal && <DocumentoLegal docId={docLegal} onFechar={() => setDocLegal(null)} onAbrir={setDocLegal} />}
+      {docLegal && <DocumentoLegal docId={docLegal} onFechar={() => setDocLegal(null)} onAbrir={setDocLegal}
+        leituraObrigatoria={!termosLidos} onConcluir={() => { setTermosLidos(true); setDocLegal(null); }} />}
     </div>
   );
 }
